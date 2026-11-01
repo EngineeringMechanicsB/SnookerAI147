@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Snooker · AI 147</title>
+<!-- 字体先加载：Michelangelus 以 base64 内嵌在这份 CSS 里，
+     所以双击打开（file://）也能生效 —— file:// 直接引 .ttf 会被 CORS 挡掉。 -->
+<link rel="stylesheet" href="css/fonts.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="game-wrap">
+
+  <!-- 顶部 HUD：.game-wrap 的普通流子元素（网格里的第一行）。
+       不再 absolute 浮在台面上 —— 以前它会盖住左上角那半个台面。
+
+       座位模型：两个下拉**各自独立**选座位 1 / 座位 2 的选手
+       （Human 或任意一档 AI）。两边都是 AI 就自动进入观战模式：
+       透视自由镜头 + 暂停按钮 + 隐藏 UI。互相之间不干扰，
+       所以"A 是我 / B 是 AI"和"A 是 AI / B 是我"都能打。 -->
+  <div class="hud">
+    <div class="hud-player" id="p1Box">
+      <span class="hud-dot p1"></span>
+      <span class="hud-name" id="p1Name">Player 1</span>
+      <span class="hud-score" id="p1Score">0</span>
+    </div>
+    <span class="hud-sep">|</span>
+    <div class="hud-player" id="p2Box">
+      <span class="hud-dot p2"></span>
+      <span class="hud-name" id="p2Name">Player 2</span>
+      <span class="hud-score" id="p2Score">0</span>
+    </div>
+    <div class="hud-break">
+      <span><span id="breakWord">Break</span> <b id="breakLabel">0</b></span>
+      <span id="highLabel">High 0</span>
+    </div>
+    <span class="hud-turn" id="turnLabel">Turn</span>
+
+    <!-- 瞄准锁定提示。放在 HUD 条里而不是台面上：台面浮层没有一处是"零遮挡"的，
+         而 HUD 本来就是界面条，加一项不压台呢。
+         鼠标移动 = 瞄准，点一下台面 = 定住，再点一下 = 又能动。
+         锁定期间鼠标再怎么移都不改方向 —— 没有这个提示，用户会以为鼠标坏了。
+         微调（滚轮 / Shift+←→ / 力度条上的 ←→ 按钮）也会自动锁定。 -->
+    <span class="aim-chip" id="aimChip"></span>
+
+    <!-- 座位 1 / 座位 2 -->
+    <span class="hud-seat-label">1</span>
+    <select class="mode-select" id="seatASelect"></select>
+    <span class="hud-seat-label">2</span>
+    <select class="mode-select" id="seatBSelect"></select>
+
+    <select class="mode-select" id="speedSelect">
+      <option value="0.5">Slow</option>
+      <option value="1" selected>Normal</option>
+      <option value="2">Fast</option>
+      <option value="4">Turbo</option>
+    </select>
+    <select class="mode-select" id="modeSelect">
+      <option value="restart">Restart</option>
+      <option value="classic" selected>Snooker</option>
+      <option value="eightball">8-Ball</option>
+      <option value="nineball">9-Ball</option>
+      <option value="clearance">Clearance</option>
+      <option value="respottedBlack">Respotted Black</option>
+    </select>
+
+    <!-- 房间的光照氛围。整套光照（环境光 / 半球光 / 主光 / 补光 / 吊灯 / 窗外光）
+         和页面底色一起换 —— 光从右侧那扇窗进来，所以白天是冷亮、傍晚是橙、
+         夜晚只剩吊灯。只在 3D 下有效（2D 那套颜色是 render.js 里的常量）。 -->
+    <select class="mode-select" id="ambienceSelect" title="Room lighting">
+      <option value="auto">Auto (real time)</option>
+      <option value="match" selected>Match</option>
+      <option value="day">Day</option>
+      <option value="evening">Evening</option>
+      <option value="night">Night</option>
+    </select>
+
+    <!-- 声音：全部由 Web Audio 实时合成，项目里没有任何音频文件。
+         浏览器要求先有一次用户操作才允许出声，没起来的时候按钮显示
+         "Sound: click to enable"。 -->
+    <select class="mode-select" id="langSelect" title="Language / 语言">
+      <option value="en">English</option>
+      <option value="zh">中文</option>
+    </select>
+
+    <button class="mode-select sound-btn" id="soundBtn" title="Procedural lounge jazz + synthesized pool SFX (no audio files)">Sound Off</button>
+    <input class="vol-range" id="volRange" type="range" min="0" max="1" step="0.05" value="0.7"
+           title="Volume" aria-label="Volume">
+  </div>
+
+  <!-- 状态行：紧贴 HUD 下面，**台面之外**的一整行。
+       演进史：最早是台面正中弹大字块（观战时正好挡黑球点）→ 改成右侧独立一列
+       （不挡台面，但平白吃掉了 300px 宽度，台面被挤窄）→ 现在是 HUD 下方一行。
+       这一版两边都不占：不压台呢，也不占宽度，球台可以铺满整个页面宽度。
+       左侧是最新一条（标题加粗 + 说明淡字），右侧是上一条的灰字残影。
+       结果/犯规的语义靠 `.foul` 类区分（红字）。 -->
+  <div class="status-line" id="statusLine">
+    <span class="status-main" id="statusMain"></span>
+    <span class="status-prev" id="statusPrev"></span>
+  </div>
+
+  <!-- 台面：两层画布装在同一个 .canvas-fit 里，由 JS 按可用空间等比缩放。
+       显示尺寸永远 1416:736，**不会随窗口比例被拉扁**，也不会被裁掉。
+       3D 缓冲固定 1416×736，CSS 等比缩放 → 3D 与 2D 始终对齐。
+       台面上**没有任何浮层**。 -->
+  <div class="stage">
+    <div class="canvas-fit" id="canvasFit">
+      <canvas id="gc3d"></canvas>
+      <canvas id="gc"></canvas>
+    </div>
+
+    <!-- 观战提示：**不受"隐藏 UI"约束**，否则按 H 之后没人知道怎么操作 -->
+    <div class="spectate-hint" id="spectateHint"></div>
+  </div><!-- /stage -->
+
+  <!-- 底部控制条：所有操作控件都在这条带上，**不压台面**。
+       以前它们绝对定位浮在画布上（力度条压底库、加塞盘压左下角袋口）；
+       第八轮先改成普通流，第九轮挪到**台面下方**，视线先看球台、再看控件。 -->
+  <div class="control-bar" id="controlBar">
+
+    <!-- 加塞控制盘：内圈 = 击点，外圈下半圆 = 球杆俯仰 -->
+    <div class="spin-wrap">
+      <canvas id="spinPad" width="220" height="220"></canvas>
+      <div class="spin-info">
+        <span class="spin-title">Spin / pitch</span>
+        <span class="spin-text" id="spinText" title="Click to centre the spin">Centre</span>
+        <span class="spin-hint">Click the label to centre<br>W/S or ↑/↓ power · A/D or ←/→ aim<br>Shift + A/D side · Shift + W/S follow · Q/E side<br>X reset · outer ring pitch</span>
+      </div>
+    </div>
+
+    <!-- 力度 + 出杆。力度条可以直接拖，出杆是独立动作 -->
+    <div class="power-wrap" id="powerWrap">
+      <div class="power-track" id="powerTrack">
+        <div class="power-fill" id="powerFill"></div>
+        <div class="power-label" id="powerLabel">Drag to set power</div>
+        <div class="power-knob" id="powerKnob"></div>
+      </div>
+      <div class="power-value" id="powerValue">0%</div>
+      <!-- 方向微调：鼠标滚轮 / Shift+←→ 是快捷方式，这两个按钮是等价的显式入口
+           —— 触摸屏没有滚轮，不给按钮就等于手机上没法微调。
+           按住会连发（见 main.js 的 nudgeHold）。 -->
+      <div class="nudge-group">
+        <button class="nudge-btn" id="aimLeftBtn" title="Fine-tune aim left (scroll up)">&larr;</button>
+        <button class="nudge-btn" id="aimRightBtn" title="Fine-tune aim right (scroll down)">&rarr;</button>
+      </div>
+      <button class="shoot-btn" id="shootBtn" title="Space">Shoot</button>
+    </div>
+
+    <!-- 辅助线模式 -->
+    <select class="mode-select" id="guideSelect" title="Aiming guide (G)">
+      <option value="0">Guide: Off</option>
+      <option value="1">Guide: Cue</option>
+      <option value="2" selected>Guide: Cue + First</option>
+      <option value="3">Guide: All</option>
+    </select>
+
+    <!-- 台面剩余 -->
+    <div class="ball-count" id="ballCount"></div>
+
+    <div class="think-label" id="thinkLabel"></div>
+
+    <!-- 存档子菜单：所有保存/载入/备份入口都收在这里，控制条不再变长。
+         按钮只负责开合，具体槽位由 main.js 动态渲染。 -->
+    <div class="save-menu-wrap" id="saveMenuWrap">
+      <button class="restart-btn" id="saveMenuBtn" title="Save, load or export this game">Saves &#9662;</button>
+      <div class="save-menu" id="saveMenu" hidden>
+        <div class="save-menu-title">Saved games</div>
+        <div class="save-slots" id="saveSlots"></div>
+        <div class="save-menu-sep"></div>
+        <button class="save-menu-item" id="exportSaveBtn">Export save file&hellip;</button>
+        <button class="save-menu-item" id="importSaveBtn">Import save file&hellip;</button>
+        <input type="file" id="importSaveFile" accept="application/json,.json" hidden>
+        <div class="save-menu-note" id="saveMenuNote"></div>
+      </div>
+    </div>
+
+    <button class="restart-btn" id="viewBtn">3D View</button>
+    <button class="restart-btn" id="orbitBtn" title="Orbit the room (3D only)">3D Orbit</button>
+    <button class="restart-btn" id="pauseBtn">Pause</button>
+    <button class="restart-btn" id="restartBtn">Restart</button>
+  </div>
+
+  <!-- 球员对话气泡：位置固定在控制条上方，不参与布局，出现/消失不会让台面抖动 -->
+  <div class="chatter-box" id="chatterBox" hidden>
+    <span class="chatter-name" id="chatterName"></span>
+    <span class="chatter-text" id="chatterText"></span>
+  </div>
+
+  <!-- 一局结束的总结：谁赢、比分、双方每项数据 -->
+  <div class="summary-overlay" id="summaryOverlay" hidden>
+    <div class="summary-card">
+      <div class="summary-title" id="sumTitle">Frame</div>
+      <div class="summary-score" id="sumScore">0 : 0</div>
+      <table class="summary-table">
+        <thead><tr><th></th><th id="sumNameA">Player 1</th><th id="sumNameB">Player 2</th></tr></thead>
+        <tbody id="sumBody"></tbody>
+      </table>
+      <div class="summary-actions">
+        <button class="restart-btn primary" id="sumRematch">Rematch</button>
+        <button class="restart-btn" id="sumClose">Close</button>
+      </div>
+      <div class="summary-hint" id="sumHint"></div>
+    </div>
+  </div>
+
+</div><!-- /game-wrap -->
+
+<!-- 顺序加载：常量 → 物理 → 规则 → 模拟 → AI → AI 线程池 → 渲染 → 3D → 声音 → 主循环 -->
+<script src="js/constants.js"></script>
+<script src="js/physics.js"></script>
+<script src="js/rules.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/ai-pool.js"></script>
+<script src="js/render.js"></script>
+<script src="vendor/three.min.js"></script>
+<script src="js/render3d.js"></script>
+<script src="js/bgm.js"></script>
+<script src="js/save.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/chatter.js"></script>
+<script src="js/main.js"></script>
+<script src="js/selftest.js"></script>
+<script>
+// 控制条上的重新开局按钮（HUD 里的下拉是同一功能，两个入口都留着）
+document.getElementById('restartBtn').addEventListener('click', function () {
+  window.SNK.game.resetGame();
+});
+// 2D / 3D 视角切换
+document.getElementById('viewBtn').addEventListener('click', function () {
+  window.SNK.game.toggle3d();
+});
+// 声音开关 / 音量：由 main.js 统一接管（它还要同步按钮文字和「不可发声」状态），
+// 这里不再绑，否则一次点击会被两个监听器各 toggle 一次 = 等于没点。
+
+</script>
+</body>
+</html>

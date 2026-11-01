@@ -1,0 +1,579 @@
+/* ================================================================
+   Mini Snooker · AI 147 — 样式
+   ================================================================ */
+/* 字体：Michelangelus，由 css/fonts.css 以 base64 内嵌（file:// 下也能加载）。
+   下面这一行只管**回落链**；万一字体读不出来也不会难看。
+   注意：Chrome/Edge 从 2019 起禁止 file:// 页面用 @font-face 引外部字体文件
+   （origin 为 null，被 CORS 挡），所以这里**不能**写相对路径的 url()。 */
+/* 圆角只有三档，全站统一：
+     --r-win  外框（.game-wrap / 结算浮层）
+     --r-blk  块状元素（画布、下拉、按钮、小卡片）
+     --r-pill 胶囊（条状控件、圆钮）
+   关键一条：**内层 = 外层 − 内边距**，两层圆角才是同心的。
+   里面写 --r-blk 就等于 --r-win − --pad，改任何一个数字都不用再去找内层。 */
+:root {
+  --r-win:22px;
+  --r-blk:10px;
+  --r-pill:999px;
+  --pad:12px;
+  /* 让浏览器把原生控件（尤其 <select> 的弹出列表、滚动条、文件选择框）
+     也画成深色。只在 option 上写 background-color 是不够的：
+     Windows 上原生弹层由系统绘制，必须声明 color-scheme。 */
+  color-scheme: dark;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background:#0f0f1a;
+  display:flex; justify-content:center; align-items:center;
+  min-height:100vh;
+  /* 首选 fonts.css 里内嵌的 Michelangelus（项目自带，不依赖系统装没装）；
+     万一读不出来，逐级回落到 Times New Roman / 系统衬线。
+     中文若出现会回落到系统的衬线宋体。 */
+  font-family:"Michelangelus","Times New Roman",Georgia,'Nimbus Roman','Songti SC',serif;
+  overflow:hidden; user-select:none;
+}
+.game-wrap {
+  position:relative;
+  /* 单列四行：HUD / 状态行 / 球台 / 底部控制条。
+     以前是两列（球台 + 300px 消息栏），台面平白被挤窄 340px；
+     现在通知挪到 HUD 下面一行，台面可以铺满整个宽度。
+     第八轮把操作控件从台面浮层挪进独立控制条，第九轮再把它**放到台面下方** ——
+     四行都是普通流，台面上一个浮层都没有，控件也在视线下方。
+     高度写死 98vh（不是 max-height）：中间那行 1fr 才有确定高度，
+     画布才能按"可用空间"等比缩放（见 main.js 的 fitCanvases）。 */
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  grid-template-rows:auto auto minmax(0,1fr) auto;
+  gap:10px;
+  background:linear-gradient(145deg,var(--page0,#1a1a2e),var(--page1,#16213e));
+  border-radius:var(--r-win);
+  padding:var(--pad);
+  box-shadow:0 20px 80px rgba(0,0,0,0.9),0 0 40px rgba(0,80,0,0.08);
+  width:98vw;
+  height:98vh;
+}
+/* 台面槽位：占满网格中间那一行，画布在里面居中。
+   尺寸不交给 CSS 的 max-width/max-height（那两个在 grid/flex 里会算出
+   非等比或把画布裁掉），而是由 main.js 的 fitCanvases() 按槽位实际
+   可用宽高算一个 1416:736 的等比框写到 .canvas-fit 上。
+   这样：窗口怎么拉，台面比例都不变，且永远完整显示（只会缩小）。 */
+.stage {
+  position:relative; min-width:0; min-height:0;
+  grid-column:1; grid-row:3;
+  display:flex; align-items:center; justify-content:center;
+  overflow:hidden;
+}
+/* 两层画布的公共盒子：宽度/高度由 JS 设定，两层都填满它。
+   #gc3d 在下（3D 台面），#gc 在上（透明输入层）——两者尺寸永远一致。 */
+.canvas-fit {
+  position:relative; flex:0 0 auto;
+  line-height:0; overflow:hidden;
+  border-radius:var(--r-blk);
+}
+/* 两层画布都跟着父盒子的圆角裁剪，避免 3D 合成层在切换/H 隐藏 UI 后
+   绕过父级的 overflow 圆角，露出直角。 */
+.canvas-fit canvas { border-radius:inherit; }
+/* 3D 画布是 alpha 透明的（three 那边没设 clear 色），所以在 3D 模式下
+   **露出来的其实是这层 CSS 渐变** —— "房间氛围"有一半在这里。
+   三段色由光照氛围预设通过 --sky0/1/2 写进来（见 render3d.js 的 applyAmbience）。 */
+canvas#gc3d {
+  position:absolute; inset:0; width:100%; height:100%; display:block;
+  /* 3D 层只负责显示：所有鼠标/触摸都必须落到上面的 #gc 输入层。
+     只靠 z-index 在个别浏览器/合成层下仍可能被绝对定位层截走事件。 */
+  pointer-events:none;
+  background:radial-gradient(ellipse at 50% 40%,
+    var(--sky0,#0e2a1a) 0%,var(--sky1,#08140d) 60%,var(--sky2,#040805) 100%);
+}
+canvas#gc {
+  position:relative; z-index:1;
+  display:block; width:100%; height:100%;
+  cursor:crosshair; touch-action:none;
+}
+
+/* ---------- 底部控制条（第八轮，第九轮挪到台面下方） ---------- */
+/* 所有操作控件都在这里：加塞盘 + 力度条 + 辅助线下拉 + 球数 + 按钮。
+   它是 .game-wrap 的第 4 行（最后一格），所以**在台面下方、不压台面**。
+   高度由加塞盘（110px + padding）决定，约 130px。 */
+.control-bar {
+  grid-column:1; grid-row:4;
+  /* 顶部存档菜单向**上**展开，会伸进 .stage 的区域。
+     backdrop-filter 让 .control-bar 自己形成层叠上下文；不给它提升
+     z-index 的话，菜单的 z-index:150 只在这个上下文里有效，整条控制条
+     仍可能被画在台面画布下面。提升到 20（低于结算层的 30）后，
+     菜单稳定盖住 2D/3D 画布，结算弹窗仍能盖住整条控制条。 */
+  position:relative; z-index:20;
+  display:flex; align-items:center; justify-content:center;
+  flex-wrap:wrap; gap:10px 16px;
+  background:rgba(0,0,0,0.45); backdrop-filter:blur(10px);
+  padding:8px 14px; border-radius:var(--r-blk);
+  border:1px solid rgba(255,255,255,0.05);
+  line-height:normal;
+  min-width:0;
+}
+
+/* ---------- 存档子菜单 ---------- */
+/* 控制条上只多一个 "Saves" 按钮；保存槽位、导入导出全在这块浮层里，
+   避免一排新按钮把控制条撑成两行。 */
+.save-menu-wrap { position:relative; display:inline-flex; }
+.save-menu {
+  position:absolute; right:0; bottom:calc(100% + 8px);
+  width:300px; padding:10px;
+  background:rgba(16,18,32,0.98);
+  border:1px solid rgba(255,255,255,0.12);
+  border-radius:var(--r-blk);
+  box-shadow:0 18px 50px rgba(0,0,0,0.65);
+  z-index:150;
+  color:#cfd3e0; font-size:11px;
+}
+.save-menu[hidden] { display:none; }
+.save-menu-title {
+  color:rgba(255,255,255,0.45); font-size:9px;
+  letter-spacing:1.2px; text-transform:uppercase;
+  padding:2px 4px 8px;
+}
+.save-slots { display:flex; flex-direction:column; gap:4px; }
+.save-slot {
+  display:grid; grid-template-columns:1fr auto auto;
+  align-items:center; gap:6px;
+  padding:6px 6px 6px 8px;
+  border-radius:8px;
+  background:rgba(255,255,255,0.035);
+}
+.save-slot:hover { background:rgba(255,255,255,0.07); }
+.save-slot-name { color:#e8eaf2; font-size:11px; }
+.save-slot-time {
+  display:block; color:rgba(255,255,255,0.32);
+  font-size:9px; margin-top:1px; letter-spacing:0.2px;
+}
+.save-slot-btn {
+  padding:3px 9px; border-radius:var(--r-pill);
+  border:1px solid rgba(255,255,255,0.14);
+  background:transparent; color:rgba(255,255,255,0.7);
+  font-family:inherit; font-size:10px; cursor:pointer;
+}
+.save-slot-btn:hover { color:#fff; border-color:rgba(255,255,255,0.35); }
+.save-slot-btn:disabled { opacity:0.25; cursor:default; }
+.save-menu-sep {
+  height:1px; margin:8px 2px;
+  background:rgba(255,255,255,0.09);
+}
+.save-menu-item {
+  display:block; width:100%; text-align:left;
+  padding:6px 8px; border:0; border-radius:8px;
+  background:transparent; color:rgba(255,255,255,0.7);
+  font-family:inherit; font-size:11px; cursor:pointer;
+}
+.save-menu-item:hover { background:rgba(255,255,255,0.07); color:#fff; }
+.save-menu-note {
+  min-height:13px; padding:6px 4px 0;
+  color:rgba(255,255,255,0.35); font-size:9px;
+}
+.save-menu-note.ok { color:#9becb0; }
+.save-menu-note.err { color:#ff9a9a; }
+
+/* 池球模式隐藏斯诺克单杆/最高分栏，避免把 Break/High 当成池球规则 */
+body.pool-mode .hud-break { display:none; }
+
+/* ---------- HUD ---------- */
+/* 注意：HUD 是 .game-wrap 的**普通流子元素**（不是 absolute），
+   所以它占自己那一行，不会盖住台面。 */
+.hud {
+  position:relative;
+  grid-column:1; grid-row:1;   /* 占第一行（单列网格，不用再跨列） */
+  display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+  justify-content:center;
+  background:rgba(0,0,0,0.55); backdrop-filter:blur(12px);
+  padding:6px 20px; border-radius:var(--r-blk);
+  border:1px solid rgba(255,255,255,0.06);
+  z-index:10;
+  flex:0 0 auto;
+}
+.hud-player {
+  display:flex; align-items:center; gap:8px; padding:4px 12px;
+  border-radius:var(--r-pill); transition:all 0.3s;
+}
+.hud-player.active {
+  background:rgba(255,255,255,0.08);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,0.1);
+}
+.hud-dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+.hud-dot.p1 { background:#4dabf7; }
+.hud-dot.p2 { background:#ff6b9d; }
+.hud-name { color:#999; font-size:11px; font-weight:500; letter-spacing:0.5px; white-space:nowrap; }
+.hud-score { color:#fff; font-size:18px; font-weight:700; min-width:30px; text-align:center; }
+.hud-sep { color:rgba(255,255,255,0.15); font-size:16px; }
+.hud-turn { color:rgba(255,255,255,0.3); font-size:10px; letter-spacing:1px; margin-left:4px; white-space:nowrap; }
+.hud-break {
+  display:flex; flex-direction:column; align-items:flex-end; gap:1px;
+  color:rgba(255,255,255,0.45); font-size:9px; letter-spacing:0.4px;
+  font-variant-numeric:tabular-nums; white-space:nowrap;
+}
+.hud-break b { color:#ffd93d; font-size:11px; font-weight:700; }
+
+/* ---------- 下拉框 ---------- */
+.mode-select {
+  background:transparent;
+  border:1px solid rgba(255,255,255,0.1);
+  color:rgba(255,255,255,0.4); padding:3px 22px 3px 8px;
+  border-radius:var(--r-blk); font-size:10px; cursor:pointer;
+  transition:all 0.2s; outline:none;
+  appearance:none; -webkit-appearance:none;
+  font-family:inherit; letter-spacing:0.3px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='rgba(255,255,255,0.25)'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 6px center;
+}
+.mode-select:hover { color:#fff; border-color:rgba(255,255,255,0.25); background-color:rgba(255,255,255,0.06); }
+.mode-select option { background:#1a1a2e; color:#bbb; padding:8px 12px; font-size:11px; }
+/* 两个座位下拉：座位 1 偏蓝、座位 2 偏粉，跟 HUD 圆点同一套颜色语言 */
+#seatASelect { border-color:rgba(120,180,255,0.22); color:rgba(140,190,255,0.75); }
+#seatASelect:hover { color:#9cc7ff; border-color:rgba(120,180,255,0.5); }
+#seatBSelect { border-color:rgba(255,150,190,0.22); color:rgba(255,165,200,0.75); }
+#seatBSelect:hover { color:#ffa8c8; border-color:rgba(255,150,190,0.5); }
+.hud-seat-label {
+  color:rgba(255,255,255,0.22); font-size:10px; letter-spacing:0.5px;
+  margin-right:-4px;
+}
+
+/* 声音：状态按钮 + 音量滑块 */
+/* 按钮（不是下拉）。.mode-select 自带一枚右上角的下拉箭头（background-image）
+   和 "right 6px center" 的定位，.sound-btn 只覆盖 padding 时那枚箭头会压在
+   "Sound On" 的右端字符上 —— 所以这里必须把箭头整个关掉。
+   .sound-btn 自己也没有 ::after，箭头纯粹来自 background-image。 */
+.sound-btn { padding:3px 12px; background-image:none; }
+/* 氛围下拉在 2D 下没有意义（那套颜色是 render.js 里的常量）→ 置灰，见 main.js */
+.mode-select:disabled { opacity:0.35; cursor:default; }
+.sound-btn.on { color:#9becb0; border-color:rgba(120,255,170,0.35); }
+.vol-range {
+  width:70px; height:14px; cursor:pointer; background:transparent;
+  appearance:none; -webkit-appearance:none; outline:none;
+}
+.vol-range::-webkit-slider-runnable-track {
+  height:3px; border-radius:var(--r-pill); background:rgba(255,255,255,0.14);
+}
+.vol-range::-webkit-slider-thumb {
+  appearance:none; -webkit-appearance:none;
+  width:10px; height:10px; margin-top:-3.5px; border-radius:50%;
+  background:rgba(255,255,255,0.55); border:none;
+}
+.vol-range::-moz-range-track { height:3px; border-radius:var(--r-pill); background:rgba(255,255,255,0.14); }
+.vol-range::-moz-range-thumb {
+  width:10px; height:10px; border-radius:50%; border:none;
+  background:rgba(255,255,255,0.55);
+}
+
+/* ---------- 力度条 + 出杆 ---------- */
+.power-wrap {
+  /* 控制条里的一格。用 visibility 而不是 display 切换：
+     否则 AI 回合时整条会塌掉，球台跟着上下跳。 */
+  position:relative; z-index:1;
+  display:flex; align-items:center; gap:12px;
+  visibility:hidden; opacity:0;
+  transition:opacity 0.2s, visibility 0.2s;
+  pointer-events:none;
+  padding:8px 12px; border-radius:var(--r-pill);
+  border:1px solid transparent;
+}
+.power-wrap.show {
+  visibility:visible; opacity:1; pointer-events:auto;
+  border-color:rgba(255,255,255,0.06);
+  background:rgba(0,0,0,0.35);
+}
+.power-track {
+  width:260px; height:14px; cursor:pointer;
+  background:rgba(0,0,0,0.5);
+  border-radius:var(--r-pill); border:1px solid rgba(255,255,255,0.06);
+  overflow:visible; position:relative;
+}
+.power-fill {
+  height:100%; width:0%; border-radius:var(--r-pill);
+  background:linear-gradient(90deg,#2ed573,#ffd93d 40%,#ff9f43 65%,#ff4757);
+  transition:width 0.04s linear;
+}
+.power-knob {
+  position:absolute; top:50%; left:-6px; width:12px; height:12px;
+  margin-top:-6px; border-radius:50%;
+  background:#fff; box-shadow:0 1px 4px rgba(0,0,0,0.6);
+  pointer-events:none;
+}
+.power-label {
+  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  color:rgba(255,255,255,0.22); font-size:8px; font-weight:600;
+  letter-spacing:2px; white-space:nowrap;
+  transition:opacity 0.3s;
+}
+.power-value {
+  color:rgba(255,255,255,0.55); font-size:11px; font-weight:700;
+  font-variant-numeric:tabular-nums; min-width:36px; text-align:right;
+}
+/* 方向微调按钮：和 Shoot 同一块面板里，锁定的状态下也照按（微调本身就是锁定） */
+.nudge-group { display:flex; gap:6px; }
+.nudge-btn {
+  width:26px; height:26px; padding:0; border-radius:50%;
+  background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1);
+  color:rgba(255,255,255,0.6); font-family:inherit; font-size:12px;
+  line-height:1; cursor:pointer; user-select:none;
+  transition:background 0.15s, color 0.15s;
+}
+.nudge-btn:hover { background:rgba(255,255,255,0.14); color:#fff; }
+.nudge-btn:active { background:rgba(255,217,61,0.22); color:#ffd93d; }
+
+.shoot-btn {
+  background:linear-gradient(180deg,#2ed573,#1aa352);
+  border:none; color:#04240f; font-weight:800;
+  padding:7px 16px; border-radius:var(--r-pill); font-size:12px;
+  cursor:pointer; font-family:inherit; letter-spacing:0.5px;
+  box-shadow:0 2px 12px rgba(46,213,115,0.35);
+  transition:transform 0.1s, box-shadow 0.2s;
+}
+.shoot-btn:hover { box-shadow:0 2px 18px rgba(46,213,115,0.6); }
+.shoot-btn:active { transform:translateY(1px) scale(0.98); }
+
+/* ---------- 状态行（HUD 下方通栏） ---------- */
+/* 只有一条的高度，所以永远不可能压到台呢；宽度上也不占额外一列，
+   球台因此能铺满整个页面宽度。左边是最新一条，右边是上一条的残影。
+   消息的"来"靠一次短促的亮度脉冲表达（.flash），比卡片滑入克制得多。 */
+.status-line {
+  grid-column:1; grid-row:2;
+  display:flex; align-items:baseline; gap:14px;
+  min-width:0;
+  padding:0 6px; height:22px; line-height:22px;
+  overflow:hidden; white-space:nowrap;
+  font-size:13px;
+  opacity:0.92;
+}
+.status-main {
+  min-width:0; flex:0 1 auto;
+  overflow:hidden; text-overflow:ellipsis;
+  transition:opacity 0.5s ease-out;
+}
+.status-main b { color:#eaeaea; font-weight:600; }
+.status-main .s-sub { color:#9a9a9a; font-size:12px; }
+.status-main .s-sub em { color:#ffd93d; font-style:normal; }
+/* 自检脚本的 sub 里有 <br>。状态行只有一行高，换行会被裁掉半行，
+   所以这里把 <br> 直接吃掉，整条挤在一行里（超出部分靠省略号）。 */
+.status-main .s-sub br { display:none; }
+/* 停留时间到 → 淡下去表示"这条已经旧了"，而不是直接消失（消失会闪） */
+.status-main.idle { opacity:0.4; }
+/* 犯规 / 失利：整行转红 */
+.status-line.foul .status-main b,
+.status-line.foul .status-main .s-sub { color:#ff8080; }
+/* 新消息脉冲：一下的亮度 + 一点左移，够注意到，又不闹 */
+.status-line.flash .status-main { animation:statusFlash 0.5s ease-out; }
+@keyframes statusFlash {
+  0%   { transform:translateX(-6px); filter:brightness(2.2); }
+  100% { transform:none;            filter:none; }
+}
+/* 上一条的灰字残影，靠右对齐；窄屏直接省略 */
+.status-prev {
+  margin-left:auto; min-width:0; flex:0 1 auto;
+  overflow:hidden; text-overflow:ellipsis;
+  color:rgba(255,255,255,0.22); font-size:11px;
+}
+
+/* 窄屏：HUD 会换行，状态行也跟着让位；残影去掉省空间 */
+@media (max-width:980px), (max-height:640px) {
+  .game-wrap { display:flex; flex-direction:column; }
+  .stage { flex:1 1 auto; min-height:0; }
+  .status-prev { display:none; }
+  .control-bar { gap:6px 10px; padding:6px 10px; }
+  #spinPad { width:86px; height:86px; }
+  .spin-hint { display:none; }
+  .power-track { width:180px; }
+}
+
+/* ---------- 结算弹窗（一局结束） ---------- */
+.summary-overlay {
+  position:absolute; inset:0; z-index:30;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(4,6,12,0.72); backdrop-filter:blur(6px);
+  border-radius:var(--r-blk);
+}
+.summary-overlay[hidden] { display:none; }
+.summary-card {
+  background:linear-gradient(160deg,rgba(24,26,46,0.98),rgba(12,14,26,0.98));
+  border:1px solid rgba(255,255,255,0.1);
+  border-radius:var(--r-blk); padding:22px 28px 18px;
+  min-width:380px; max-width:min(90vw,560px);
+  box-shadow:0 20px 60px rgba(0,0,0,0.7);
+  text-align:center;
+  transform:scale(0.94); opacity:0;
+  transition:transform 0.3s cubic-bezier(0.34,1.4,0.64,1), opacity 0.25s;
+}
+.summary-overlay.show .summary-card { transform:none; opacity:1; }
+.summary-title { color:#ffd93d; font-size:13px; letter-spacing:2px; text-transform:uppercase; }
+.summary-score { color:#fff; font-size:34px; font-weight:700; margin:6px 0 14px; font-variant-numeric:tabular-nums; }
+.summary-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+.summary-table th {
+  color:rgba(255,255,255,0.85); font-weight:600; padding:5px 8px;
+  border-bottom:1px solid rgba(255,255,255,0.1); font-size:12px;
+}
+.summary-table th.win { color:#ffd93d; }
+.summary-table td { padding:4px 8px; color:#c9c9c9; border-bottom:1px solid rgba(255,255,255,0.04); }
+.summary-table td.k { color:rgba(255,255,255,0.42); text-align:left; font-size:11.5px; }
+.summary-table td.v { text-align:center; font-variant-numeric:tabular-nums; }
+.summary-table tr.hl td.v { color:#fff; font-weight:700; }
+.summary-actions { display:flex; gap:10px; justify-content:center; margin-top:18px; }
+.restart-btn.primary {
+  background:linear-gradient(180deg,#2ed573,#1aa352); color:#04240f;
+  border-color:transparent; font-weight:700;
+}
+.summary-hint { color:rgba(255,255,255,0.35); font-size:10.5px; margin-top:10px; min-height:13px; letter-spacing:0.4px; }
+
+/* ---------- 台面剩余球 ---------- */
+.ball-count {
+  position:relative; z-index:1;
+  display:flex; flex-direction:row; align-items:center; gap:6px;
+  flex-wrap:wrap; justify-content:center;
+  pointer-events:none;
+  /* 预留固定宽度：剩余球数文字变化时不能让控制条忽宽忽窄，
+     否则会在临界宽度反复换行，台面尺寸跟着跳。 */
+  min-width:220px; min-height:22px;
+}
+.ball-count-group {
+  display:flex; align-items:center; gap:6px;
+  background:rgba(0,0,0,0.3); backdrop-filter:blur(4px);
+  padding:3px 10px; border-radius:var(--r-blk);
+  border:1px solid rgba(255,255,255,0.04);
+}
+.ball-count-label { color:rgba(255,255,255,0.25); font-size:9px; letter-spacing:0.5px; }
+.ball-count-item { display:flex; align-items:center; gap:4px; }
+.ball-count-dot {
+  width:7px; height:7px; border-radius:50%; display:inline-block;
+  box-shadow:inset 0 0 2px rgba(0,0,0,0.3);
+}
+.ball-count-num { color:rgba(255,255,255,0.5); font-size:11px; font-weight:600; }
+.ball-count-sep { color:rgba(255,255,255,0.1); font-size:8px; }
+.bc-hint {
+  display:inline-flex; align-items:center; gap:5px;
+  font-size:9.5px; color:#f1e2b8; font-weight:600;
+  letter-spacing:0.6px; text-transform:uppercase;
+  padding:3px 9px; border-radius:999px;
+  background:rgba(201,162,74,0.12);
+  border:1px solid rgba(201,162,74,0.36);
+  white-space:nowrap;
+}
+.bc-hint::before {
+  content:attr(data-prefix);
+  color:rgba(201,162,74,0.85);
+  font-size:8px; letter-spacing:1px;
+}
+
+/* ---------- 球员对话气泡 ---------- */
+/* 固定在控制条上方，不占布局；出现/消失不会让台面尺寸变化。 */
+.chatter-box {
+  position:fixed; right:24px; bottom:196px; z-index:31;
+  max-width:340px; padding:10px 14px 11px;
+  display:flex; flex-direction:column; gap:3px;
+  background:rgba(12,16,20,0.94);
+  border:1px solid rgba(201,162,74,0.28);
+  border-left:3px solid rgba(201,162,74,0.9);
+  border-radius:4px 12px 12px 4px;
+  box-shadow:0 8px 28px rgba(0,0,0,0.45);
+  opacity:0; transform:translateY(8px);
+  transition:opacity .22s ease, transform .22s ease;
+  pointer-events:none;
+}
+.chatter-box.show { opacity:1; transform:translateY(0); }
+.chatter-name {
+  color:#e4c779; font-size:10px; font-weight:700;
+  letter-spacing:1.2px; text-transform:uppercase;
+}
+.chatter-text {
+  color:rgba(245,242,232,0.92); font-size:12.5px; line-height:1.45;
+  font-family:Georgia, 'Times New Roman', serif;
+}
+.chatter-box::after {
+  content:''; position:absolute; left:18px; bottom:-7px;
+  border-left:7px solid transparent; border-right:7px solid transparent;
+  border-top:7px solid rgba(201,162,74,0.9);
+}
+
+/* ---------- 瞄准锁定提示（挂在 HUD 条里） ---------- */
+/* 刻意**不**放在台面浮层上：台面四角分别被球数、加塞盘、按钮组、力度条占着，
+   剩下能放的地方都会压到台呢或库边 —— 而这块提示是要常驻的（锁定期间一直在），
+   常驻的东西不能压台面。所以塞进 HUD 这条界面带，高度和 .hud-turn 对齐。 */
+.aim-chip {
+  font-size:10px; letter-spacing:0.4px; white-space:nowrap;
+  color:rgba(255,255,255,0.3); padding:2px 9px; border-radius:var(--r-pill);
+  border:1px solid transparent;
+  order:9;                       /* 排在 HUD 最右，不打断"选手/比分"那一组 */
+  opacity:0; transition:opacity 0.35s;
+}
+.aim-chip.show { opacity:1; }
+/* 锁定中：转琥珀色，一眼看出"方向被冻住了" */
+.aim-chip.locked {
+  color:#ffd98a; border-color:rgba(255,200,90,0.3);
+  background:rgba(50,35,0,0.45);
+}
+/* 锁定后鼠标不再改方向，光标形态也跟着变，别让人以为鼠标失灵了 */
+body.aim-locked canvas#gc { cursor:default; }
+
+/* ---------- 加塞控制盘 ---------- */
+.spin-wrap {
+  position:relative; z-index:1;
+  display:flex; align-items:center; gap:10px;
+  flex:0 0 auto;
+}
+/* 缓冲区 220×220、显示 110×110：坐标换算在 main.js 里按 rect 缩放，不用改。
+   外圈半环（俯仰）也在缓冲区里画，所以显示尺寸别改小到看不见刻度。 */
+#spinPad {
+  width:110px; height:110px; border-radius:50%;
+  cursor:pointer; pointer-events:auto;
+  background:rgba(0,0,0,0.28);
+  box-shadow:0 4px 18px rgba(0,0,0,0.45);
+}
+.spin-info { display:flex; flex-direction:column; gap:2px; }
+.spin-title { color:rgba(255,255,255,0.25); font-size:9px; letter-spacing:1px; }
+.spin-text {
+  color:#ff9a9a; font-size:12px; font-weight:700; letter-spacing:0.5px;
+  display:inline-block; min-width:64px;   /* Centre / Top + Right 不改变列宽 */
+}
+.spin-hint { color:rgba(255,255,255,0.22); font-size:9px; line-height:1.35; }
+
+/* ---------- 控制条右侧的按钮 ---------- */
+.think-label {
+  color:#9cc7ff; font-size:11px; letter-spacing:0.5px;
+  opacity:0; transition:opacity 0.2s; white-space:nowrap;
+  /* 空字符串和 "Thinking… · 8 threads" 不能改变控制条宽度 */
+  min-width:128px; text-align:center; display:inline-block;
+}
+.restart-btn {
+  background:rgba(255,255,255,0.06);
+  border:1px solid rgba(255,255,255,0.08);
+  color:rgba(255,255,255,0.5); padding:6px 16px; border-radius:var(--r-pill);
+  font-size:11px; cursor:pointer; transition:all 0.2s;
+  font-family:inherit;
+}
+.restart-btn:hover { background:rgba(255,255,255,0.12); color:#fff; }
+
+/* ---------- 观战：隐藏全部 UI（热键 H / Esc） ---------- */
+/* .spectate-hint 故意**不在**隐藏名单里 —— 否则按 H 之后就没人知道还能怎么操作了 */
+body.ui-hidden .hud,
+body.ui-hidden .status-line,
+body.ui-hidden .control-bar,
+body.ui-hidden .chatter-box { display:none !important; }
+body.ui-hidden .game-wrap {
+  background:none; padding:0; box-shadow:none; border-radius:0;
+  width:100vw; height:100vh; display:block;
+}
+/* 隐藏 UI 时台面槽位铺满整个视口，fitCanvases() 会重新按 16:9.2 等比适配 */
+body.ui-hidden .stage { position:fixed; inset:0; }
+body.ui-hidden .canvas-fit { border-radius:0; }
+
+/* 观战 / 主动轨道视角：#gc 是镜头输入面，不是瞄球面 */
+body.spectating canvas#gc { cursor:grab; }
+body.spectating.dragging canvas#gc { cursor:grabbing; }
+body.orbit-view canvas#gc { cursor:grab; }
+body.orbit-view.orbit-aim canvas#gc { cursor:crosshair; }
+body.orbit-view.dragging canvas#gc { cursor:grabbing; }
+
+.spectate-hint {
+  position:absolute; bottom:16px; left:50%; transform:translateX(-50%);
+  z-index:14; pointer-events:none;
+  background:rgba(0,0,0,0.4); backdrop-filter:blur(6px);
+  border:1px solid rgba(255,255,255,0.06); border-radius:var(--r-pill);
+  padding:5px 16px; color:rgba(255,255,255,0.45); font-size:11px;
+  letter-spacing:0.5px; white-space:nowrap;
+  opacity:0; transition:opacity 0.5s;
+}
+.spectate-hint.show { opacity:1; }
