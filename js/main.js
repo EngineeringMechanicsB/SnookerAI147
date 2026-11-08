@@ -153,6 +153,8 @@
     power: 0,
     spinX: 0, spinY: 0,
     pitchDeg: 0,          // 球杆俯仰（0..PITCH_MAX_DEG），第八轮
+    cueClear: null,       // 后斯诺克：本杆可击球面（cueclear.js 的 analyze 结果）
+    cueBlockNotice: '',   // 本回合已提示过"球杆被挡"的去重键
     guideMode: 2,         // 辅助线：0 全无 / 1 只有母球 / 2 母球+第一颗 / 3 所有动的球
     stroke: null,         // 出杆动画快照：{angle,power,spinX,spinY,pitchDeg,t,pull,fired}
     needRed: true,
@@ -782,6 +784,7 @@
     G.maxOnNoticed = false;
     G.snookerReqNotice = '';
     G.snookerNotice = '';
+    G.cueBlockNotice = '';
     live.potted = []; live.firstContact = null; live.firstContactBall = null;
     live.pottedByLabel = {};
     live.kind = ''; live.onLabel = null;
@@ -857,6 +860,10 @@
       return;
     }
 
+    // 出杆前更新一次可击球面（提示 + 3D 抬杆用）。击点本身不在
+    // 这里改，strike() 会按同一份 cueClear 夹紧。
+    refreshCueClear();
+
     live.potted = [];
     live.firstContact = null;
     live.firstContactBall = null;
@@ -901,7 +908,7 @@
     if (s.fired || !G.cueBall) return;
     s.fired = true;
     C.strike(G.cueBall, s.angle, s.power, s.spinX, s.spinY,
-      s.pitchDeg * Math.PI / 180);
+      s.pitchDeg * Math.PI / 180, G.balls);
     if (SNK.bgm) SNK.bgm.cueHit(s.power);      // 皮头触球声（与物理事件无关，出杆即有）
     G.trail = G.balls.map(b => ({ label: b.label, pts: [], color: trailColor(b) }));
     G.trailTime = 0;
@@ -1450,25 +1457,23 @@
     if (!G.cueBall || !G.cueBall.isOnTable()) return null;
     if (G.state === 'moving' || G.state === 'placing' || G.state === 'over') return null;
 
-    // 把俯仰换算成 strike() 里的同样修正再交给 sim.js —— sim 一行不改，
-    // 但预览的初速与实机完全同源（cos 衰减 + 高杆增量都在算 off 之前）。
-    const pitch = G.pitchDeg * Math.PI / 180;
+    // 俯仰、后斯诺克夹紧、cos 力度损失全部在 strike() 里做。
+    // 预览只要把**同一组原始参数**交给 sim.js，就不会和实机算出两种结果。
     const base = G.power < C.MIN_POWER ? 8 : G.power;
-    const pw = pitch > 0 ? base * Math.cos(pitch) : base;
-    // 先做 strike() 里那次夹紧，再加俯仰增量 —— 否则 spinY 超出 0.75 时两边结果不同
-    let psy = C.clamp(G.spinY, -C.SPIN_MAX, C.SPIN_MAX);
-    if (pitch > 0) psy = C.clamp(psy + Math.sin(pitch) * C.PITCH_FOLLOW_K, -C.SPIN_MAX, C.SPIN_MAX);
 
     const key = [
-      G.aimAngle.toFixed(4), pw.toFixed(2),
-      G.spinX.toFixed(3), psy.toFixed(3), G.pitchDeg,
+      G.aimAngle.toFixed(4), base.toFixed(2),
+      G.spinX.toFixed(3), G.spinY.toFixed(3), G.pitchDeg,
       G.ballsVersion, G.cueBall.x.toFixed(2), G.cueBall.y.toFixed(2),
     ].join('|');
     if (key === previewKey && previewCache) return previewCache;
     previewKey = key;
     previewCache = C.sim.simulateShot(
       G.balls,
-      { angle: G.aimAngle, power: pw, spinX: G.spinX, spinY: psy },
+      {
+        angle: G.aimAngle, power: base,
+        spinX: G.spinX, spinY: G.spinY, pitchDeg: G.pitchDeg,
+      },
       { track: true }
     );
     previewCache.angle = G.aimAngle;
@@ -1480,6 +1485,7 @@
   // ================================================================
   function render() {
     ctx.clearRect(0, 0, C.W, C.H);
+    const effSpin = effectiveSpin();
 
     // 3D 模式：台面/球/球杆全交给 three.js，#gc 只当透明输入层
     if (use3d) {
@@ -1488,11 +1494,12 @@
         cueBall: G.cueBall,
         aimAngle: G.aimAngle,
         power: G.power,
-        spinX: G.spinX, spinY: G.spinY,
+        spinX: effSpin.sx, spinY: effSpin.sy,
         state: G.state,
         preview: (G.state === 'aim' || G.state === 'powering' || G.state === 'dragging' || G.state === 'stroking') ? getPreview() : null,
         guideMode: G.guideMode,
         pitchDeg: G.pitchDeg,
+        cueBlockPitchDeg: (G.cueClear && G.cueClear.blocked) ? G.cueClear.pitchDeg : 0,
         strokePull: G.stroke ? G.stroke.pull : 0,
         trail: G.trail,
         trailTime: G.trailTime,
@@ -1526,7 +1533,7 @@
       if (G.guideMode > 0) RENDER.drawPreview(ctx, G.cueBall, getPreview(), G.aimAngle, G.guideMode);
     }
 
-    RENDER.drawBalls(ctx, G.balls, G.cueBall, G.spinX, G.spinY, G.aimAngle, G.pitchDeg);
+    RENDER.drawBalls(ctx, G.balls, G.cueBall, effSpin.sx, effSpin.sy, G.aimAngle, G.pitchDeg);
 
     // 上一杆轨迹回放：停杆后 1.6 秒内淡出
     if (G.trailTime && G.trail.length && G.state !== 'moving') {
@@ -1536,8 +1543,11 @@
     }
 
     if (G.state === 'aim' || G.state === 'powering' || G.state === 'dragging' || G.state === 'stroking') {
+      // 球杆被挡时必须抬杆：2D 里也按同一仰角画，否则看起来像穿过球
+      const visPitch = Math.max(G.pitchDeg,
+        (G.cueClear && G.cueClear.blocked) ? G.cueClear.pitchDeg : 0);
       RENDER.drawCue(ctx, G.cueBall, G.aimAngle, G.power, G.state,
-        G.pitchDeg, G.stroke ? G.stroke.pull : 0);
+        visPitch, G.stroke ? G.stroke.pull : 0);
     }
 
     // 白球脉冲
@@ -1558,8 +1568,16 @@
   function renderSpinPad() {
     if (!spinCtx) return;
     const human = G.players[G.currentPlayer].type === 'human';
-    RENDER.drawSpinPad(spinCtx, spinPad.width, G.spinX, G.spinY, human, G.pitchDeg);
-    if (dom.spinText) dom.spinText.textContent = tr(RENDER.spinText(G.spinX, G.spinY));
+    const eff = effectiveSpin();
+    RENDER.drawSpinPad(spinCtx, spinPad.width, eff.sx, eff.sy, human,
+      G.pitchDeg, G.cueClear);
+    if (dom.spinText) {
+      let txt = tr(RENDER.spinText(eff.sx, eff.sy));
+      if (G.cueClear && G.cueClear.blocked) {
+        txt += ' · ' + t('ui.topOnly', { pct: Math.round(G.cueClear.topFrac * 100) });
+      }
+      dom.spinText.textContent = txt;
+    }
   }
 
   // ================================================================
@@ -1613,6 +1631,10 @@
       if (d) { G.power = C.clamp(G.power + d, 0, C.MAX_POWER); updatePowerDisplay(); }
     }
 
+    // 后斯诺克：每帧按当前瞄准方向重算"背后有没有东西挡杆"。
+    // 显示和预览用 effectiveSpin() 夹；真正的击球由 strike() 再夹一次。
+    refreshCueClear();
+
     // 力度条：人类回合、瞄准中就显示（里面还有 "Shoot" 按钮）
     dom.powerWrap.classList.toggle('show',
       humanTurn() && (G.state === 'aim' || G.state === 'placing'));
@@ -1651,6 +1673,45 @@
 
   function humanTurn() {
     return G.players[G.currentPlayer].type === 'human';
+  }
+
+  // ----------------------------------------------------------------
+  //  后斯诺克：本杆可击球面
+  // ----------------------------------------------------------------
+  // 只在这几个"要出杆"的状态下算；球在动/结算时没有意义。
+  function refreshCueClear() {
+    G.cueClear = null;
+    if (!SNK.cueClear || !G.cueBall || !G.cueBall.isOnTable()) return null;
+    if (G.state !== 'aim' && G.state !== 'powering' &&
+        G.state !== 'dragging' && G.state !== 'stroking') return null;
+    G.cueClear = SNK.cueClear.analyze(G.balls, G.cueBall, G.aimAngle);
+
+    // 每回合第一次被挡时提示一次，别让玩家以为盘面坏了。
+    // 完全被斯诺克时已经有更重要的提示，别再抢消息条
+    const blocked = G.cueClear.blocked && humanTurn() && !G.snookerNotice;
+    const visit = (G.stats && G.stats[G.currentPlayer])
+      ? (G.stats[G.currentPlayer].visits || 0) : 0;
+    const key = blocked
+      ? G.currentPlayer + '|' + visit + '|' + G.cueClear.kind
+      : '';
+    if (blocked && key !== G.cueBlockNotice) {
+      G.cueBlockNotice = key;
+      showMsg(t('msg.cueBlockedTitle'), t('msg.cueBlocked', {
+        pct: Math.round(G.cueClear.topFrac * 100),
+        deg: Math.round(G.cueClear.pitchDeg),
+      }), 3200);
+    }
+    return G.cueClear;
+  }
+
+  // 实际生效的击点：被挡时夹到可击面内。
+  // **不改 G.spinX/G.spinY 本身**——否则玩家只是把瞄准线扫过挡球，
+  // 设置就会被永久顶到高杆，转开以后也回不来。
+  function effectiveSpin() {
+    if (SNK.cueClear && G.cueClear && G.cueClear.blocked) {
+      return SNK.cueClear.clampSpin(G.cueClear, G.spinX, G.spinY);
+    }
+    return { sx: G.spinX, sy: G.spinY, clamped: false };
   }
 
   function aimAt(px, py) {

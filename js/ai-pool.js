@@ -53,7 +53,7 @@
     if (workers.length || failed) return;
     try {
       const base = scriptBase();
-      const files = ['constants.js', 'physics.js', 'rules.js', 'sim.js', 'ai.js'];
+      const files = ['constants.js', 'cueclear.js', 'physics.js', 'rules.js', 'sim.js', 'ai.js'];
       const urls = files.map(f => new URL(f, base).href);
       const src = [
         'self.window = self;',

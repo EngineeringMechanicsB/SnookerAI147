@@ -476,7 +476,7 @@
   // ================================================================
   //  加塞控制盘
   // ================================================================
-  function drawSpinPad(ctx, size, spinX, spinY, enabled, pitchDeg) {
+  function drawSpinPad(ctx, size, spinX, spinY, enabled, pitchDeg, clear) {
     const cx = size / 2, cy = size / 2;
     // 球面比外圈半环小一圈，把环留给俯仰
     const r = size * 0.30;
@@ -506,6 +506,41 @@
     ctx.setLineDash([3, 3]);
     ctx.beginPath(); ctx.arc(cx, cy, r * C.SPIN_MAX, 0, Math.PI * 2); ctx.stroke();
     ctx.setLineDash([]);
+
+    // ---- 后斯诺克：被球/库边挡住的下半球 ----
+    // 球杆被挡时只能从上往下"盖"着打，盘面下半部（低杆区）整块不可用。
+    // 阴影 + 金色边界线 + 百分比，和 main.js 的实时夹紧是同一套数据。
+    if (clear && clear.blocked) {
+      const syMin = C.clamp(clear.syMin, -1, 1);
+      const by = cy - syMin * r;
+      ctx.save();
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
+      ctx.fillStyle = 'rgba(255,71,87,0.17)';
+      ctx.fillRect(cx - r, by, r * 2, cy + r - by);
+      ctx.strokeStyle = 'rgba(255,71,87,0.32)';
+      ctx.lineWidth = 1;
+      for (let x = -r * 2; x <= r * 2; x += 7) {
+        ctx.beginPath();
+        ctx.moveTo(cx + x, cy + r);
+        ctx.lineTo(cx + x + (cy + r - by), by);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // 边界线（球面上的水平弦）
+      const half = Math.sqrt(Math.max(0, r * r - (by - cy) * (by - cy)));
+      ctx.strokeStyle = 'rgba(255,217,61,0.85)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cx - half, by); ctx.lineTo(cx + half, by);
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(255,217,61,0.92)';
+      ctx.font = 'bold 8px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('↑ ' + Math.round(clear.topFrac * 100) + '%',
+        cx, by + (cy + r - by) * 0.55);
+    }
 
     // 击点。**纵轴要反过来**：canvas 的 y 向下，而物理里 spinY>0 = 高杆。
     // 直接 cy + spinY*… 会让"点在球心下方"显示成高杆 —— 真实台球里打

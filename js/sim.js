@@ -36,7 +36,7 @@
   // ----------------------------------------------------------------
   //  simulateShot(balls, shot, opts) → 结果
   //
-  //  shot = { angle, power, spinX, spinY }
+  //  shot = { angle, power, spinX, spinY, pitchDeg? }
   //  opts = { track:bool }   是否需要轨迹（瞄准预览要，AI 搜索不要）
   // ----------------------------------------------------------------
   function simulateShot(balls, shot, opts) {
@@ -51,7 +51,10 @@
     if (!cue.isOnTable()) return emptyResult();
 
     const ev = { potted: [], firstContact: null, bounces: 0, cueBall: cue };
-    C.strike(cue, shot.angle, shot.power, shot.spinX, shot.spinY);
+    // 俯仰和"后斯诺克"夹紧都交给 strike()，与实机出杆同一入口。
+    // AI 的候选杆不带 pitchDeg → 0，所以 AI 仍是平杆搜索。
+    const pitch = (Number.isFinite(shot.pitchDeg) ? shot.pitchDeg : 0) * Math.PI / 180;
+    C.strike(cue, shot.angle, shot.power, shot.spinX, shot.spinY, pitch, world);
 
     const paths = track ? world.map(() => [{ x: 0, y: 0 }]) : null;
     if (track) {

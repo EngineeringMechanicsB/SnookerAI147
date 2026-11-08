@@ -101,13 +101,27 @@
   //    power  — 力度（0..MAX_POWER）
   //    sx, sy — 击点偏移（单位球半径），|s| <= SPIN_MAX
   //    pitch  — 杆身俯仰（弧度，可选）
+  //    balls  — 球局数组（可选）。给了就检查"背后有没有球/库边挡杆"，
+  //             按 cueclear.js 的可击球面把击点夹到允许区域。
+  //             与 stepWorld 一样，实机和 AI 模拟共用这一份夹紧规则。
   //
   //  实心球绕球心的转动惯量 I = 2/5 mR²。球杆给球心的冲量 J 同时给出
   //  角冲量 J·sR（s 以 R 为单位），所以
   //      ω = J·sR / I = (5/2)·s·v/R
   //  高杆 sy>0 → 前滚角速度；低杆 sy<0 → 后滚；右塞 sx>0 → ωz<0。
   // ================================================================
-  function strike(cue, angle, power, sx, sy, pitch) {
+  function strike(cue, angle, power, sx, sy, pitch, balls) {
+    // 后斯诺克：球杆被背后的球/库边挡住时，只能打白球上部。
+    // 先夹击点再走 effectiveTip，保证后续的俯仰增量只会往上抬、不会
+    // 把击点重新压回被挡住的下半部。
+    if (balls && C.cueClear) {
+      const clear = C.cueClear.analyze(balls, cue, angle);
+      if (clear.blocked) {
+        const c = C.cueClear.clampSpin(clear, sx, sy);
+        sx = c.sx;
+        sy = c.sy;
+      }
+    }
     const tip = effectiveTip(sx, sy, pitch);
     sx = tip.sx; sy = tip.sy;
 

@@ -688,7 +688,7 @@
     // NaN 参与比较恒为 false，会静默地把候选全丢掉，比报错还难查。
     if (!cue || !cue.isOnTable()) {
       return { potLines: 0, hitLines: 0, ease: 0, cush: 0,
-               cueNear: 2000, crowd: 0, escape: 0 };
+               cueNear: 2000, crowd: 0, escape: 0, cueBlock: 0 };
     }
     const redsLeft = R.countOnTable(world, 'red');
     const oppState = {
@@ -733,8 +733,32 @@
     }
     if (!isFinite(escape)) escape = 0;
 
+    // ---- 后斯诺克（cue-block）----
+    // 对手的白球如果贴在别的球或库边前面，他的球杆就得抬起来从上往下打，
+    // 低杆区直接消失。按他"最想打的那几条线"估一个 0~2/3 的限制值：
+    // 贴得越死、挡得越正，值越大。这是防守估值里新加的一层。
+    let cueBlock = 0;
+    if (C.cueClear && targets.length) {
+      const probe = targets.slice().sort((a, b) =>
+        Math.hypot(a.x - cue.x, a.y - cue.y) - Math.hypot(b.x - cue.x, b.y - cue.y)
+      ).slice(0, 6);
+      for (let i = 0; i < probe.length; i++) {
+        const t = probe[i];
+        // 只看"对手本来能直接打到"的目标。已经被做死、只能撞库解球的
+        // 局面由 potLines / hitLines 负责，不要重复加分。
+        if (C.pathBlocked(world, cue.x, cue.y, t.x, t.y, cue, t)) continue;
+        const ang = Math.atan2(t.y - cue.y, t.x - cue.x);
+        const cl = C.cueClear.analyze(world, cue, ang);
+        // 只认"球挡杆"。贴库抬杆是普通防守，已有 cush 项，不在这里重复算。
+        if (cl.blocked && cl.kind === 'ball') {
+          const v = 1 - cl.topFrac;
+          if (v > cueBlock) cueBlock = v;
+        }
+      }
+    }
+
     return { potLines: g.count, hitLines: hitLines, ease: g.best, cush: cush,
-             cueNear: cueNear, crowd: crowd, escape: escape };
+             cueNear: cueNear, crowd: crowd, escape: escape, cueBlock: cueBlock };
   }
 
   // 越小的 score 越好。层级分明：漏球数 >> 贴球/扎堆 >> 直击数 >> 舒适度
@@ -751,6 +775,10 @@
     s += v.crowd * 900;                                // 白球扎在球堆里
     s -= Math.min(v.cueNear, 700) * 0.9;               // 白球越"孤立"越好
     s -= Math.min(v.escape, 900) * 0.5;                // 对手的目标越远越难解
+    // 后斯诺克：让对手只能抬杆打白球上部。价值高于"直击线多一条"(1000)，
+    // 低于"漏一颗球"(100000)；贴死时最多约 16000，够让 AI 在两种安全球
+    // 之间主动选"杆被挡住"的那一种。
+    s -= (v.cueBlock || 0) * 24000;
     return s;
   }
 
