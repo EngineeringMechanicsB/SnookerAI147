@@ -110,7 +110,7 @@
   //      ω = J·sR / I = (5/2)·s·v/R
   //  高杆 sy>0 → 前滚角速度；低杆 sy<0 → 后滚；右塞 sx>0 → ωz<0。
   // ================================================================
-  function strike(cue, angle, power, sx, sy, pitch, balls) {
+  function strike(cue, angle, power, sx, sy, pitch, balls, autoRaise) {
     // 玩家主动设置的俯仰。只有这部分带来 PITCH_FOLLOW_K 的高杆增量；
     // 被障碍"强迫"抬上去的角度只损失力量，不偷偷改写玩家选的击点。
     const manualPitch = Number.isFinite(pitch) ? Math.max(0, pitch) : 0;
@@ -121,7 +121,8 @@
     // 并把 60° 都够不到的极点击点往高杆方向抬。
     if (balls && C.cueClear) {
       const clear = C.cueClear.analyze(balls, cue, angle);
-      const fit = C.cueClear.fitContact(clear, sx, sy, manualPitch);
+      // 默认自动抬杆（AI / 模拟）；人类实机由 main.js 传 false，自己抬够。
+      const fit = C.cueClear.fitContact(clear, sx, sy, manualPitch, autoRaise !== false);
       sx = fit.sx;
       sy = fit.sy;
       actualPitch = fit.pitchRad;
@@ -345,6 +346,16 @@
     }
 
     const Jn = (1 + C.BOUNCE) * vn;                   // 法向冲量（速度单位）
+
+    // 法向冲量作用在球心上方 h 处，必须同时给平面内旋转一个力矩：
+    //   τ = r × J，r = (-R·n, h)，J = Jn·n
+    //   Δω = (5/2)·h·Jn/R² · (-n_y, n_x)
+    // 这一项是"滚着进库 → 平着出来(stun)"的来源。缺了它，白球撞库后
+    // 会保留原来方向的滚动；沿新方向看就是莫名其妙的回旋/自转。
+    const nk = 2.5 * C.CUSHION_H * Jn / (BALL_R * BALL_R);
+    b.wx += nk * (-ny);
+    b.wy += nk * nx;
+
     const ut = vt * (1 + C.CUSHION_H / BALL_R) - BALL_R * wz;
 
     // 粘滞解 Jt = -2·ut/7；超过库边摩擦上限就转为滑动摩擦

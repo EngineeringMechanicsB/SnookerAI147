@@ -54,7 +54,9 @@
     // 俯仰和"后斯诺克"夹紧都交给 strike()，与实机出杆同一入口。
     // AI 的候选杆不带 pitchDeg → 0，所以 AI 仍是平杆搜索。
     const pitch = (Number.isFinite(shot.pitchDeg) ? shot.pitchDeg : 0) * Math.PI / 180;
-    C.strike(cue, shot.angle, shot.power, shot.spinX, shot.spinY, pitch, world);
+    // AI 搜索默认自动抬杆；人类瞄准预览显式传 autoRaise:false。
+    const autoRaise = !(opts && opts.autoRaise === false);
+    C.strike(cue, shot.angle, shot.power, shot.spinX, shot.spinY, pitch, world, autoRaise);
 
     const paths = track ? world.map(() => [{ x: 0, y: 0 }]) : null;
     if (track) {

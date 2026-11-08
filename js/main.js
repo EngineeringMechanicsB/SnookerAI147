@@ -559,7 +559,7 @@
   //  球员对话
   //
   //  台词数据在 chatter.js，这里只负责"什么时候说、谁说"。
-  //  节奏：全局至少隔 8 秒；催促 28 秒最多一次；闲聊 75 秒最多一次。
+  //  节奏：全局至少隔 18 秒；催促 60 秒最多一次；闲聊 120 秒最多一次。
   // ================================================================
   let chatterHideTimer = null;
   let lastChatterAt = -1e9;
@@ -576,7 +576,7 @@
     if (!C.chatter || !G.players[seat]) return false;
     if (G.players[seat].type !== 'ai') return false;
     const nw = performance.now();
-    if (nw - lastChatterAt < 8000) return false;
+    if (nw - lastChatterAt < 18000) return false;
     const level = G.players[seat].level || 'master';
     const text = C.chatter.pick(level, category, ctx || {});
     if (!text) return false;
@@ -589,7 +589,7 @@
     chatterHideTimer = setTimeout(() => {
       dom.chatterBox.classList.remove('show');
       chatterHideTimer = setTimeout(() => { dom.chatterBox.hidden = true; }, 260);
-    }, 6800);
+    }, 5500);
     lastChatterAt = nw;
     return true;
   }
@@ -619,9 +619,9 @@
         if (opponent >= 0) say(opponent, 'century', { opponent: shooter, break: brk });
         else if (shooterAI) say(p, 'selfPot', { opponent: shooter, break: brk });
       } else if (brk >= 50) {
-        if (opponent >= 0 && Math.random() < 0.35) say(opponent, 'praise', { opponent: shooter });
-        else if (shooterAI && Math.random() < 0.20) say(p, 'selfPot', {});
-      } else if (Math.random() < 0.14) {
+        if (opponent >= 0 && Math.random() < 0.25) say(opponent, 'praise', { opponent: shooter });
+        else if (shooterAI && Math.random() < 0.12) say(p, 'selfPot', {});
+      } else if (Math.random() < 0.06) {
         if (opponent >= 0) say(opponent, 'praise', { opponent: shooter });
         else if (shooterAI && Math.random() < 0.5) say(p, 'selfPot', {});
       }
@@ -629,7 +629,7 @@
     }
 
     // 没进球：人类打丢时对手偶尔补一句；AI 没有 AI 对手时自己嘀咕
-    if (Math.random() < 0.22) {
+    if (Math.random() < 0.10) {
       if (opponent >= 0) say(opponent, 'miss', { opponent: shooter });
       else if (shooterAI) say(p, 'selfMiss', { opponent: shooter });
     }
@@ -643,7 +643,7 @@
     const nw = performance.now();
 
     if (spectate()) {
-      if (nw - lastIdleAt > 75000 && Math.random() < 0.5) {
+      if (nw - lastIdleAt > 120000 && Math.random() < 0.35) {
         const seat = Math.random() < 0.5 ? 0 : 1;
         if (say(seat, 'idle', {})) lastIdleAt = nw;
       }
@@ -651,12 +651,12 @@
     }
 
     if (!humanTurn()) return;
-    if (nw - lastHumanInput > 18000 && nw - lastHurryAt > 28000) {
+    if (nw - lastHumanInput > 25000 && nw - lastHurryAt > 60000) {
       const opp = aiOpponentSeat(G.currentPlayer);
       if (opp >= 0 && say(opp, 'hurry', { opponent: seatName(G.players[G.currentPlayer]) })) {
         lastHurryAt = nw;
       }
-    } else if (nw - lastHumanInput > 42000 && nw - lastIdleAt > 75000) {
+    } else if (nw - lastHumanInput > 60000 && nw - lastIdleAt > 120000) {
       const opp = aiOpponentSeat(G.currentPlayer);
       if (opp >= 0 && say(opp, 'idle', {})) lastIdleAt = nw;
     }
@@ -864,6 +864,15 @@
     // 这里改，strike() 会按同一份 cueClear 夹紧。
     refreshCueClear();
 
+    // 人类是纯手动：当前仰角不够就拒绝出杆，逼玩家自己抬够。
+    if (humanTurn() && G.cueClear && G.cueClear.fit && !G.cueClear.fit.ok) {
+      G.state = 'aim';
+      showMsg(t('msg.raiseCueTitle'), t('msg.raiseCue', {
+        deg: Math.ceil(G.cueClear.fit.requiredDeg),
+      }), 2800);
+      return;
+    }
+
     live.potted = [];
     live.firstContact = null;
     live.firstContactBall = null;
@@ -908,7 +917,8 @@
     if (s.fired || !G.cueBall) return;
     s.fired = true;
     C.strike(G.cueBall, s.angle, s.power, s.spinX, s.spinY,
-      s.pitchDeg * Math.PI / 180, G.balls);
+      s.pitchDeg * Math.PI / 180, G.balls,
+      G.players[G.currentPlayer].type === 'ai');
     if (SNK.bgm) SNK.bgm.cueHit(s.power);      // 皮头触球声（与物理事件无关，出杆即有）
     G.trail = G.balls.map(b => ({ label: b.label, pts: [], color: trailColor(b) }));
     G.trailTime = 0;
@@ -1456,6 +1466,8 @@
     if (G.guideMode === 0) return null;                 // 全无：连模拟都不跑
     if (!G.cueBall || !G.cueBall.isOnTable()) return null;
     if (G.state === 'moving' || G.state === 'placing' || G.state === 'over') return null;
+    // 人类杆角不够：不画"假装能打"的预览，先让玩家把杆抬够。
+    if (humanTurn() && G.cueClear && G.cueClear.fit && !G.cueClear.fit.ok) return null;
 
     // 俯仰、后斯诺克夹紧、cos 力度损失全部在 strike() 里做。
     // 预览只要把**同一组原始参数**交给 sim.js，就不会和实机算出两种结果。
@@ -1464,7 +1476,7 @@
     const key = [
       G.aimAngle.toFixed(4), base.toFixed(2),
       G.spinX.toFixed(3), G.spinY.toFixed(3), G.pitchDeg,
-      G.ballsVersion, G.cueBall.x.toFixed(2), G.cueBall.y.toFixed(2),
+      G.currentPlayer, G.ballsVersion, G.cueBall.x.toFixed(2), G.cueBall.y.toFixed(2),
     ].join('|');
     if (key === previewKey && previewCache) return previewCache;
     previewKey = key;
@@ -1474,7 +1486,7 @@
         angle: G.aimAngle, power: base,
         spinX: G.spinX, spinY: G.spinY, pitchDeg: G.pitchDeg,
       },
-      { track: true }
+      { track: true, autoRaise: !humanTurn() }
     );
     previewCache.angle = G.aimAngle;
     return previewCache;
@@ -1570,8 +1582,8 @@
       eff.pitchDeg, eff);
     if (dom.spinText) {
       let txt = tr(RENDER.spinText(eff.sx, eff.sy));
-      if (eff.raised && eff.requiredDeg >= 8) {
-        txt += ' · ' + t('ui.cueRaised', { deg: Math.round(eff.pitchDeg) });
+      if (eff.needMore && eff.requiredDeg >= (SNK.cueClear ? SNK.cueClear.MANUAL_MIN_DEG : 8)) {
+        txt += ' · ' + t('ui.raiseCue', { deg: Math.ceil(eff.requiredDeg) });
       }
       dom.spinText.textContent = txt;
     }
@@ -1683,25 +1695,25 @@
         G.state !== 'dragging' && G.state !== 'stroking') return null;
     G.cueClear = SNK.cueClear.analyze(G.balls, G.cueBall, G.aimAngle);
 
-    // 把当前击点、当前俯仰交给同一份 fitContact：算出实际要用的仰角，
-    // 以及 60° 都够不到时被迫往上抬的击点。
+    // 人类：autoRaise=false，仰角不够时 fit.ok=false，由 shoot() 拒绝出杆。
+    // AI：autoRaise=true，自动把杆抬到所需角度。
     const fit = SNK.cueClear.fitContact(G.cueClear, G.spinX, G.spinY,
-      G.pitchDeg * Math.PI / 180);
+      G.pitchDeg * Math.PI / 180, !humanTurn());
     G.cueClear.fit = fit;
     G.cueClear.hardSy = SNK.cueClear.minReachableSy(G.cueClear, fit.sx);
 
-    // 只在"确实被迫抬杆"且角度明显时提示一次（远处的库边 2° 不算）。
-    const blocked = fit.raised && fit.requiredDeg >= 8 &&
+    // 人类杆角不够且要求明显时提示一次（远处的库边 2° 不算）。
+    const need = !fit.ok && fit.requiredDeg >= SNK.cueClear.MANUAL_MIN_DEG &&
       humanTurn() && !G.snookerNotice;
     const visit = (G.stats && G.stats[G.currentPlayer])
       ? (G.stats[G.currentPlayer].visits || 0) : 0;
-    const key = blocked
+    const key = need
       ? G.currentPlayer + '|' + visit + '|' + (fit.kind || '')
       : '';
-    if (blocked && key !== G.cueBlockNotice) {
+    if (need && key !== G.cueBlockNotice) {
       G.cueBlockNotice = key;
-      showMsg(t('msg.cueBlockedTitle'), t('msg.cueBlocked', {
-        deg: Math.round(fit.requiredDeg),
+      showMsg(t('msg.raiseCueTitle'), t('msg.raiseCue', {
+        deg: Math.ceil(fit.requiredDeg),
       }), 3200);
     }
     return G.cueClear;
@@ -1719,6 +1731,7 @@
         pitchDeg: f.pitchRad * 180 / Math.PI,
         requiredDeg: f.requiredDeg,
         raised: f.raised,
+        needMore: !f.ok,
         clamped: f.clamped,
         hardSy: G.cueClear.hardSy,
       };
@@ -1726,7 +1739,8 @@
     const tip = C.effectiveTip(G.spinX, G.spinY, G.pitchDeg * Math.PI / 180);
     return {
       sx: tip.sx, sy: tip.sy, pitchDeg: G.pitchDeg,
-      requiredDeg: 0, raised: false, clamped: false, hardSy: -C.SPIN_MAX,
+      requiredDeg: 0, raised: false, needMore: false,
+      clamped: false, hardSy: -C.SPIN_MAX,
     };
   }
 

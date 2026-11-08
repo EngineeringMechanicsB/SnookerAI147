@@ -604,10 +604,16 @@
 
     // 后斯诺克的最低仰角：在俯仰环上标一道红刻度。
     // 杆角低于它时 fitContact 会自动抬上去，所以旋钮本身显示实际角度。
-    if (eff && eff.requiredDeg >= 8) {
+    if (eff && eff.requiredDeg >= (C.cueClear ? C.cueClear.MANUAL_MIN_DEG : 8)) {
       const req = C.clamp(eff.requiredDeg, 0, C.PITCH_MAX_DEG);
       const thReq = Math.PI * (1 - req / C.PITCH_MAX_DEG);
       const cR = Math.cos(thReq), sR = Math.sin(thReq);
+      // 手动模式下还差多少：从当前杆角到最低仰角画一段红弧
+      if (eff.needMore && pitchTh > thReq + 0.01) {
+        ctx.strokeStyle = 'rgba(255,71,87,0.28)';
+        ctx.lineWidth = ringW;
+        ctx.beginPath(); ctx.arc(cx, cy, ringR, thReq, pitchTh); ctx.stroke();
+      }
       ctx.strokeStyle = 'rgba(255,120,120,0.95)';
       ctx.lineWidth = 2.5;
       ctx.beginPath();

@@ -32,6 +32,9 @@
   const LATERAL_MAX = R * (CLEAR_BALL + 2 * SPIN_MAX + 0.2); // 侧偏再大也碰不到
   const DEG = 180 / Math.PI;
   const PITCH_MAX_RAD = C.PITCH_MAX_DEG / DEG;
+  // 人类纯手动模式的最小门槛：低于这个角度（远处库边的几何余量）
+  // 自动抬掉，不必让玩家为 2° 去拧俯仰环；真正的球/近库才要求手动。
+  const MANUAL_MIN_DEG = 6;
 
   const IDLE = Object.freeze({
     blocked: false, obstacles: [], kind: '', blocker: null,
@@ -194,13 +197,16 @@
   }
 
   // ================================================================
-  //  fitContact(clear, sx, sy, pitchRad)
-  //  物理/预览/AI 共用的入口：
-  //    · 所需仰角 ≤ 60°：不改击点，把仰角抬到 max(玩家设置, 所需)
-  //    · 所需仰角 > 60°：把击点往高杆方向抬，直到 60° 能打到
-  //  返回实际击点、实际仰角和提示用的 requiredDeg。
+  //  fitContact(clear, sx, sy, pitchRad, autoRaise)
+  //  物理/预览/AI 共用的入口。
+  //
+  //  autoRaise = true  —— AI：把仰角自动抬到 max(玩家设置, 所需)，不挡杆。
+  //  autoRaise = false —— 人类：**纯手动**。仰角不够就返回 ok:false，
+  //                      让 main.js 拒绝出杆并提示"抬到 X°"。
+  //
+  //  两种情况都把 60° 仍够不到的极点击点往高杆方向抬。
   // ================================================================
-  function fitContact(clear, sx, sy, pitchRad) {
+  function fitContact(clear, sx, sy, pitchRad, autoRaise) {
     let px = C.clamp(Number.isFinite(sx) ? sx : 0, -SPIN_MAX, SPIN_MAX);
     let py = C.clamp(Number.isFinite(sy) ? sy : 0, -SPIN_MAX, SPIN_MAX);
     const basePitch = Number.isFinite(pitchRad) ? Math.max(0, pitchRad) : 0;
@@ -240,6 +246,24 @@
       req = info.deg / DEG;
     }
 
+    // 人类纯手动：仰角低于要求就不让出杆，不偷偷替玩家抬。
+    // 但 6° 以下只是远处库边的几何余量，自动带过，避免每杆都要拧俯仰。
+    if (!autoRaise && req > basePitch + 1e-6 && req * DEG >= MANUAL_MIN_DEG) {
+      return {
+        sx: px,
+        sy: py,
+        pitchRad: basePitch,
+        requiredRad: req,
+        requiredDeg: req * DEG,
+        kind: info.kind,
+        blocker: info.blocker,
+        ok: false,
+        needMore: true,
+        raised: false,
+        clamped: clamped,
+      };
+    }
+
     // 极端包围下 req 仍可能超过 60°；杆角以 60° 封顶，避免 cos 越界。
     const pitch = Math.min(Math.max(basePitch, req), PITCH_MAX_RAD);
     return {
@@ -250,6 +274,8 @@
       requiredDeg: req * DEG,
       kind: info.kind,
       blocker: info.blocker,
+      ok: true,
+      needMore: false,
       raised: pitch > basePitch + 1e-6,
       clamped: clamped,
     };
@@ -259,6 +285,7 @@
     SHAFT_R: SHAFT_R,
     CLEAR_BALL: CLEAR_BALL,
     CLEAR_RAIL: CLEAR_RAIL,
+    MANUAL_MIN_DEG: MANUAL_MIN_DEG,
     analyze: analyze,
     requiredInfo: requiredInfo,
     requiredPitchDeg: requiredPitchDeg,
