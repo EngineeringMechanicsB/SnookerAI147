@@ -110,7 +110,7 @@
   //      ω = J·sR / I = (5/2)·s·v/R
   //  高杆 sy>0 → 前滚角速度；低杆 sy<0 → 后滚；右塞 sx>0 → ωz<0。
   // ================================================================
-  function strike(cue, angle, power, sx, sy, pitch, balls, autoRaise) {
+  function strike(cue, angle, power, sx, sy, pitch, balls) {
     // 玩家主动设置的俯仰。只有这部分带来 PITCH_FOLLOW_K 的高杆增量；
     // 被障碍"强迫"抬上去的角度只损失力量，不偷偷改写玩家选的击点。
     const manualPitch = Number.isFinite(pitch) ? Math.max(0, pitch) : 0;
@@ -121,8 +121,7 @@
     // 并把 60° 都够不到的极点击点往高杆方向抬。
     if (balls && C.cueClear) {
       const clear = C.cueClear.analyze(balls, cue, angle);
-      // 默认自动抬杆（AI / 模拟）；人类实机由 main.js 传 false，自己抬够。
-      const fit = C.cueClear.fitContact(clear, sx, sy, manualPitch, autoRaise !== false);
+      const fit = C.cueClear.fitContact(clear, sx, sy, manualPitch);
       sx = fit.sx;
       sy = fit.sy;
       actualPitch = fit.pitchRad;

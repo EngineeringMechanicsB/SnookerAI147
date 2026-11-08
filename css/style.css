@@ -577,3 +577,103 @@ body.orbit-view.dragging canvas#gc { cursor:grabbing; }
   opacity:0; transition:opacity 0.5s;
 }
 .spectate-hint.show { opacity:1; }
+
+/* ---------- 教学模式：GT 驾照式单课练习 ---------- */
+.tutorial-hud {
+  position:absolute; top:112px; left:20px;
+  z-index:33; display:flex; align-items:center; gap:14px;
+  max-width:min(560px, calc(100% - 40px));
+  padding:8px 14px; border-radius:var(--r-pill);
+  background:rgba(8,12,20,0.78); backdrop-filter:blur(10px);
+  border:1px solid rgba(255,217,61,0.22);
+  box-shadow:0 10px 30px rgba(0,0,0,0.35);
+}
+.tutorial-hud[hidden] { display:none; }
+.tut-hud-text { display:flex; align-items:baseline; gap:8px; min-width:0; }
+.tut-step {
+  color:#ffd93d; font-size:10px; letter-spacing:1px; white-space:nowrap;
+}
+.tut-hud-text b { color:#fff; font-size:12px; white-space:nowrap; }
+.tut-goal {
+  color:rgba(255,255,255,0.55); font-size:11px; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis;
+}
+.tut-goal::before { content:'·'; margin-right:6px; color:rgba(255,217,61,0.5); }
+.tut-hud-actions { display:flex; gap:6px; margin-left:auto; }
+.tut-mini {
+  background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1);
+  color:rgba(255,255,255,0.72); border-radius:var(--r-pill);
+  padding:4px 12px; font-size:10px; font-family:inherit; cursor:pointer;
+}
+.tut-mini:hover { background:rgba(255,255,255,0.13); color:#fff; }
+
+.tutorial-overlay {
+  position:absolute; inset:0; z-index:38;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(4,6,12,0.74); backdrop-filter:blur(8px);
+  border-radius:var(--r-win);
+}
+.tutorial-overlay[hidden] { display:none; }
+.tutorial-panel {
+  width:min(820px, calc(100% - 40px));
+  max-height:84%; overflow:auto;
+  background:linear-gradient(160deg, rgba(22,28,42,0.97), rgba(10,14,22,0.97));
+  border:1px solid rgba(255,255,255,0.09);
+  border-radius:var(--r-win);
+  padding:22px 24px 20px;
+  box-shadow:0 24px 70px rgba(0,0,0,0.55);
+}
+.tutorial-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; }
+.tutorial-kicker { color:rgba(255,217,61,0.7); font-size:10px; letter-spacing:2px; text-transform:uppercase; }
+.tutorial-head h2 { margin:4px 0 0; color:#fff; font-size:24px; font-weight:500; letter-spacing:1px; }
+.tut-close {
+  background:none; border:1px solid rgba(255,255,255,0.12); color:rgba(255,255,255,0.6);
+  width:30px; height:30px; border-radius:50%; font-size:18px; line-height:1;
+  cursor:pointer; font-family:inherit;
+}
+.tut-close:hover { color:#fff; border-color:rgba(255,255,255,0.3); }
+.tutorial-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px; }
+.tut-card {
+  text-align:left; padding:14px 15px; border-radius:var(--r-blk);
+  background:rgba(255,255,255,0.035); border:1px solid rgba(255,255,255,0.075);
+  color:#fff; font-family:inherit; cursor:pointer; transition:all 0.18s;
+}
+.tut-card:hover { background:rgba(255,255,255,0.085); border-color:rgba(255,217,61,0.35); transform:translateY(-1px); }
+.tut-card.done { border-color:rgba(46,213,115,0.45); }
+.tut-card-top { display:flex; align-items:center; gap:9px; margin-bottom:6px; }
+.tut-num {
+  width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center;
+  background:rgba(255,217,61,0.13); color:#ffd93d; font-size:10px; flex:0 0 auto;
+}
+.tut-card.done .tut-num { background:rgba(46,213,115,0.16); color:#2ed573; }
+.tut-card-title { font-size:13px; letter-spacing:0.3px; }
+.tut-check { margin-left:auto; color:#2ed573; font-size:12px; }
+.tut-card-desc { color:rgba(255,255,255,0.46); font-size:11px; line-height:1.5; }
+.tutorial-note { margin-top:14px; color:rgba(255,255,255,0.3); font-size:10px; letter-spacing:0.4px; }
+
+.tutorial-result {
+  width:min(430px, calc(100% - 40px));
+  background:linear-gradient(160deg, rgba(22,28,42,0.98), rgba(10,14,22,0.98));
+  border:1px solid rgba(255,255,255,0.1);
+  border-radius:var(--r-win);
+  padding:26px 26px 22px; text-align:center;
+  box-shadow:0 24px 70px rgba(0,0,0,0.55);
+}
+.tut-result-mark {
+  width:46px; height:46px; margin:0 auto 12px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(46,213,115,0.15); color:#2ed573; font-size:22px;
+  border:1px solid rgba(46,213,115,0.35);
+}
+.tutorial-result.fail .tut-result-mark {
+  background:rgba(255,71,87,0.13); color:#ff6b7d; border-color:rgba(255,71,87,0.35);
+}
+.tutorial-result h3 { margin:0 0 8px; color:#fff; font-size:19px; font-weight:500; }
+.tutorial-result p { margin:0 0 18px; color:rgba(255,255,255,0.55); font-size:12px; line-height:1.6; }
+.tut-result-actions { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+.tut-result-actions .restart-btn.primary {
+  background:rgba(255,217,61,0.16); border-color:rgba(255,217,61,0.45); color:#ffd93d;
+}
+
+
+

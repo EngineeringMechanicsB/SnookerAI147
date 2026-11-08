@@ -161,6 +161,8 @@
 
     <div class="think-label" id="thinkLabel"></div>
 
+    <button class="restart-btn" id="tutorialBtn" title="Learn aim, spin, follow, draw and the rules">Tutorial</button>
+
     <!-- 存档子菜单：所有保存/载入/备份入口都收在这里，控制条不再变长。
          按钮只负责开合，具体槽位由 main.js 动态渲染。 -->
     <div class="save-menu-wrap" id="saveMenuWrap">
@@ -205,6 +207,47 @@
     </div>
   </div>
 
+  <!-- 教学：进行中的目标条 + 课程选择 + 单步结果 -->
+  <div class="tutorial-hud" id="tutorialHud" hidden>
+    <div class="tut-hud-text">
+      <span class="tut-step" id="tutStep"></span>
+      <b id="tutName"></b>
+      <span class="tut-goal" id="tutGoal"></span>
+    </div>
+    <div class="tut-hud-actions">
+      <button class="tut-mini" id="tutRetry">Retry</button>
+      <button class="tut-mini" id="tutMenuBtn">Lessons</button>
+      <button class="tut-mini" id="tutExitBtn">Exit</button>
+    </div>
+  </div>
+
+  <div class="tutorial-overlay" id="tutorialOverlay" hidden>
+    <div class="tutorial-panel">
+      <div class="tutorial-head">
+        <div>
+          <div class="tutorial-kicker" id="tutKicker">Practice like a licence test</div>
+          <h2 id="tutTitle">Tutorial</h2>
+        </div>
+        <button class="tut-close" id="tutClose" title="Close">&times;</button>
+      </div>
+      <div class="tutorial-grid" id="tutorialGrid"></div>
+      <div class="tutorial-note" id="tutNote"></div>
+    </div>
+  </div>
+
+  <div class="tutorial-overlay" id="tutorialResult" hidden>
+    <div class="tutorial-result">
+      <div class="tut-result-mark" id="tutResultMark">&#10003;</div>
+      <h3 id="tutResultTitle"></h3>
+      <p id="tutResultText"></p>
+      <div class="tut-result-actions">
+        <button class="restart-btn" id="tutRetryBtn">Retry</button>
+        <button class="restart-btn primary" id="tutNextBtn">Next</button>
+        <button class="restart-btn" id="tutLessonsBtn">Lessons</button>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /game-wrap -->
 
 <!-- 顺序加载：常量 → 物理 → 规则 → 模拟 → AI → AI 线程池 → 渲染 → 3D → 声音 → 主循环 -->
@@ -222,6 +265,7 @@
 <script src="js/save.js"></script>
 <script src="js/i18n.js"></script>
 <script src="js/chatter.js"></script>
+<script src="js/tutorial.js"></script>
 <script src="js/main.js"></script>
 <script src="js/selftest.js"></script>
 <script>

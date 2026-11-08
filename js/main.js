@@ -83,6 +83,15 @@
     summaryOverlay: $('summaryOverlay'), sumTitle: $('sumTitle'), sumScore: $('sumScore'),
     sumNameA: $('sumNameA'), sumNameB: $('sumNameB'), sumBody: $('sumBody'),
     sumRematch: $('sumRematch'), sumClose: $('sumClose'), sumHint: $('sumHint'),
+    // 教学
+    tutorialBtn: $('tutorialBtn'),
+    tutorialHud: $('tutorialHud'), tutStep: $('tutStep'), tutName: $('tutName'), tutGoal: $('tutGoal'),
+    tutRetry: $('tutRetry'), tutMenuBtn: $('tutMenuBtn'), tutExitBtn: $('tutExitBtn'),
+    tutorialOverlay: $('tutorialOverlay'), tutorialGrid: $('tutorialGrid'),
+    tutKicker: $('tutKicker'), tutTitle: $('tutTitle'), tutClose: $('tutClose'), tutNote: $('tutNote'),
+    tutorialResult: $('tutorialResult'), tutResultMark: $('tutResultMark'),
+    tutResultTitle: $('tutResultTitle'), tutResultText: $('tutResultText'),
+    tutRetryBtn: $('tutRetryBtn'), tutNextBtn: $('tutNextBtn'), tutLessonsBtn: $('tutLessonsBtn'),
   };
 
   // ================================================================
@@ -155,6 +164,7 @@
     pitchDeg: 0,          // 球杆俯仰（0..PITCH_MAX_DEG），第八轮
     cueClear: null,       // 后斯诺克：本杆可击球面（cueclear.js 的 analyze 结果）
     cueBlockNotice: '',   // 本回合已提示过"球杆被挡"的去重键
+    tutorial: null,       // 教学模式：{id, stepIndex, waiting, zone} 或 null
     guideMode: 2,         // 辅助线：0 全无 / 1 只有母球 / 2 母球+第一颗 / 3 所有动的球
     stroke: null,         // 出杆动画快照：{angle,power,spinX,spinY,pitchDeg,t,pull,fired}
     needRed: true,
@@ -663,6 +673,313 @@
   }, 4500);
 
   // ================================================================
+  //  教学模式（GT 驾照式单课练习）
+  // ================================================================
+  const TUT_DONE_KEY = 'snk.tutorial.done';
+  let tutorialMenuWasPaused = false;
+  let tutorialNextTimer = null;
+
+  function tutText(o) {
+    return C.tutorial ? C.tutorial.txt(o) : ((o && o.en) || '');
+  }
+  function tutLesson() {
+    return G.tutorial && C.tutorial ? C.tutorial.byId(G.tutorial.id) : null;
+  }
+  function tutStep() {
+    const lesson = tutLesson();
+    return lesson ? lesson.steps[G.tutorial.stepIndex] : null;
+  }
+  function tutDoneList() {
+    try {
+      const raw = localStorage.getItem(TUT_DONE_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) { return []; }
+  }
+  function tutMarkDone(id) {
+    try {
+      const arr = tutDoneList();
+      if (arr.indexOf(id) < 0) arr.push(id);
+      localStorage.setItem(TUT_DONE_KEY, JSON.stringify(arr));
+    } catch (e) { /* ignore */ }
+  }
+  function tutStepLabel() {
+    const lesson = tutLesson();
+    if (!lesson) return '';
+    return t('tut.step', {
+      n: G.tutorial.stepIndex + 1,
+      total: lesson.steps.length,
+    });
+  }
+
+  function updateTutorialHud() {
+    if (!dom.tutorialHud) return;
+    const lesson = tutLesson();
+    const step = tutStep();
+    if (!G.tutorial || !lesson || !step) {
+      dom.tutorialHud.hidden = true;
+      return;
+    }
+    dom.tutorialHud.hidden = false;
+    dom.tutStep.textContent = tutStepLabel();
+    dom.tutName.textContent = tutText(step.title);
+    dom.tutGoal.textContent = tutText(step.goal);
+    dom.tutRetry.textContent = t('tut.retry');
+    dom.tutMenuBtn.textContent = t('tut.lessons');
+    dom.tutExitBtn.textContent = t('tut.exit');
+  }
+
+  function renderTutorialGrid() {
+    if (!dom.tutorialGrid || !C.tutorial) return;
+    const done = tutDoneList();
+    dom.tutorialGrid.textContent = '';
+    for (const lesson of C.tutorial.lessons) {
+      const card = document.createElement('button');
+      card.className = 'tut-card' + (done.indexOf(lesson.id) >= 0 ? ' done' : '');
+      card.type = 'button';
+      const top = document.createElement('div');
+      top.className = 'tut-card-top';
+      const num = document.createElement('span');
+      num.className = 'tut-num';
+      num.textContent = done.indexOf(lesson.id) >= 0 ? '✓' : lesson.icon;
+      const title = document.createElement('span');
+      title.className = 'tut-card-title';
+      title.textContent = tutText(lesson.title);
+      const check = document.createElement('span');
+      check.className = 'tut-check';
+      check.textContent = done.indexOf(lesson.id) >= 0 ? '✓' : '';
+      top.appendChild(num); top.appendChild(title); top.appendChild(check);
+      const desc = document.createElement('div');
+      desc.className = 'tut-card-desc';
+      desc.textContent = tutText(lesson.intro);
+      card.appendChild(top); card.appendChild(desc);
+      card.addEventListener('click', () => startTutorial(lesson.id, 0));
+      dom.tutorialGrid.appendChild(card);
+    }
+    if (dom.tutKicker) dom.tutKicker.textContent = t('tut.kicker');
+    if (dom.tutTitle) dom.tutTitle.textContent = t('tut.title');
+    if (dom.tutNote) {
+      dom.tutNote.textContent = done.length >= C.tutorial.lessons.length
+        ? t('tut.allDone') : t('tut.note');
+    }
+  }
+
+  function openTutorialMenu() {
+    if (!C.tutorial) return;
+    clearTimeout(tutorialNextTimer);
+    if (C.TABLE_MODE !== 'snooker') {
+      location.href = location.pathname + '?mode=classic&tutorial=1';
+      return;
+    }
+    if (G.state === 'moving' || G.state === 'stroking') {
+      showMsg(t('tut.wait'), '', 1600);
+      return;
+    }
+    if (G.tutorial) G.tutorial.waiting = true;
+    tutorialMenuWasPaused = G.paused;
+    G.paused = true;
+    updatePauseBtn();
+    renderTutorialGrid();
+    dom.tutorialOverlay.hidden = false;
+  }
+
+  function closeTutorialMenu() {
+    dom.tutorialOverlay.hidden = true;
+    if (G.tutorial) {
+      loadTutorialStep(G.tutorial.stepIndex);
+    } else {
+      G.paused = tutorialMenuWasPaused;
+      updatePauseBtn();
+      if (!G.paused) maybeScheduleAI();
+    }
+  }
+
+  function clearTutorialResult() {
+    if (dom.tutorialResult) dom.tutorialResult.hidden = true;
+  }
+
+  function startTutorial(id, stepIndex) {
+    if (!C.tutorial) return;
+    if (C.TABLE_MODE !== 'snooker') {
+      location.href = location.pathname + '?mode=classic&tutorial=1';
+      return;
+    }
+    const lesson = C.tutorial.byId(id);
+    if (!lesson) return;
+    if (use3d) toggle3d();                 // 目标圈只画在 2D；教学统一用 2D
+    dom.tutorialOverlay.hidden = true;
+    clearTutorialResult();
+    clearTimeout(tutorialNextTimer);
+    G.tutorial = {
+      id: id,
+      stepIndex: C.clamp(stepIndex | 0, 0, lesson.steps.length - 1),
+      waiting: false,
+      zone: null,
+    };
+    G.players = [
+      { type: 'human', level: 'master' },
+      { type: 'human', level: 'master' },
+    ];
+    G.currentPlayer = 0;
+    G.gameMode = 'classic';
+    if (dom.modeSelect) dom.modeSelect.value = 'classic';
+    G.scores = [0, 0];
+    G.breaks = [0, 0];
+    G.highBreak = 0;
+    G.stats = [newSeatStats(), newSeatStats()];
+    G.paused = false;
+    G.aiThinking = false;
+    G.aiToken++;
+    G.pendingKind = '';
+    updatePauseBtn();
+    loadTutorialStep(G.tutorial.stepIndex);
+  }
+
+  function loadTutorialStep(index) {
+    clearTimeout(tutorialNextTimer);
+    const lesson = tutLesson();
+    if (!lesson) return;
+    if (!G.tutorial) return;
+    const idx = C.clamp(index | 0, 0, lesson.steps.length - 1);
+    const step = lesson.steps[idx];
+    const spec = step.setup(C);
+    if (!spec) return;
+
+    G.tutorial.stepIndex = idx;
+    G.tutorial.waiting = false;
+    G.tutorial.zone = spec.zone || null;
+
+    G.balls = [];
+    G.cueBall = new C.Ball(spec.cue.x, spec.cue.y, 'white');
+    G.balls.push(G.cueBall);
+    for (const b of (spec.balls || [])) {
+      G.balls.push(new C.Ball(b.x, b.y, b.label));
+    }
+
+    G.state = 'aim';
+    G.paused = false;
+    updatePauseBtn();
+    G.aimAngle = Number.isFinite(spec.aimAngle) ? spec.aimAngle : 0;
+    G.aimLocked = false;
+    document.body.classList.remove('aim-locked');
+    G.power = Number.isFinite(spec.power) ? spec.power : 14;
+    G.spinX = Number.isFinite(spec.spinX) ? spec.spinX : 0;
+    G.spinY = Number.isFinite(spec.spinY) ? spec.spinY : 0;
+    G.pitchDeg = Number.isFinite(spec.pitchDeg) ? spec.pitchDeg : 0;
+    G.guideMode = Number.isFinite(spec.guideMode) ? spec.guideMode : 3;
+    if (dom.guideSelect) dom.guideSelect.value = String(G.guideMode);
+    G.opening = false;
+    G.cueInHand = false;
+    G.isRespottedBlack = false;
+    G.needRed = true;
+    G.pottedRedThisTurn = false;
+    G.poolOpen = true;
+    G.poolGroups = [null, null];
+    G.negativeStreak = 0;
+    G.noPotStreak = [0, 0];
+    G.forceNotice = [0, 0];
+    G.cueClear = null;
+    G.trail = [];
+    G.trailTime = 0;
+    G.shotStartCue = null;
+    G.ballsVersion++;
+    live.potted = []; live.firstContact = null; live.firstContactBall = null;
+    live.pottedByLabel = {}; live.kind = ''; live.onLabel = null;
+
+    updatePowerDisplay();
+    updateHUD();
+    updateBallCount();
+    updateTutorialHud();
+    clearTutorialResult();
+    lastPlain = '';
+    if (dom.statusPrev) dom.statusPrev.textContent = '';
+    showMsg(tutText(step.title), tutText(step.tip), 5200);
+    if (SNK.bgm) SNK.bgm.duck(false);
+  }
+
+  function tutorialOnSettled() {
+    const lesson = tutLesson();
+    const step = tutStep();
+    if (!lesson || !step) return;
+    const ctx = {
+      potted: live.potted.slice(),
+      firstContact: live.firstContact,
+      cue: G.cueBall,
+      balls: G.balls,
+      startCue: G.shotStartCue,
+      zone: G.tutorial.zone,
+    };
+    let result;
+    try { result = step.check(ctx, C) || { pass: false }; }
+    catch (e) { result = { pass: false, msg: { en: 'Check failed.', zh: '判定出错。' } }; }
+
+    G.state = 'aim';
+    G.tutorial.waiting = true;
+    updateHUD();
+
+    if (result.pass) {
+      if (G.tutorial.stepIndex < lesson.steps.length - 1) {
+        const next = G.tutorial.stepIndex + 1;
+        showMsg(t('tut.stepClear'), tutText(result.msg), 1800);
+        clearTimeout(tutorialNextTimer);
+        tutorialNextTimer = setTimeout(() => {
+          if (G.tutorial && G.tutorial.id === lesson.id && G.tutorial.stepIndex === next - 1) {
+            loadTutorialStep(next);
+          }
+        }, 1100);
+      } else {
+        tutMarkDone(lesson.id);
+        showTutorialResult(true, tutText(result.msg));
+      }
+    } else {
+      showTutorialResult(false, tutText(result.msg));
+    }
+  }
+
+  function showTutorialResult(pass, text) {
+    const lesson = tutLesson();
+    if (!lesson) return;
+    G.tutorial.waiting = true;
+    if (dom.tutorialResult) {
+      dom.tutorialResult.hidden = false;
+      dom.tutorialResult.classList.toggle('fail', !pass);
+      dom.tutResultMark.textContent = pass ? '✓' : '×';
+      dom.tutResultTitle.textContent = pass ? t('tut.pass') : t('tut.fail');
+      dom.tutResultText.textContent = text || '';
+      dom.tutRetryBtn.textContent = t('tut.retry');
+      dom.tutNextBtn.textContent = t('tut.next');
+      dom.tutLessonsBtn.textContent = t('tut.lessons');
+      const idx = C.tutorial.lessons.indexOf(lesson);
+      dom.tutNextBtn.hidden = !pass || idx >= C.tutorial.lessons.length - 1;
+    }
+    updateTutorialHud();
+  }
+
+  function retryTutorialStep() {
+    if (!G.tutorial) return;
+    clearTutorialResult();
+    loadTutorialStep(G.tutorial.stepIndex);
+  }
+
+  function nextTutorialLesson() {
+    const lesson = tutLesson();
+    if (!lesson) return;
+    const idx = C.tutorial.lessons.indexOf(lesson);
+    const next = C.tutorial.lessons[idx + 1];
+    if (next) startTutorial(next.id, 0);
+    else openTutorialMenu();
+  }
+
+  function exitTutorial() {
+    clearTimeout(tutorialNextTimer);
+    G.tutorial = null;
+    dom.tutorialHud.hidden = true;
+    dom.tutorialOverlay.hidden = true;
+    clearTutorialResult();
+    applySeats();          // 恢复座位下拉里的正常对手，并重开一局
+  }
+
+  // ================================================================
   //  开局 / 复位
   // ================================================================
   function initBalls() {
@@ -753,6 +1070,20 @@
   }
 
   function resetGame() {
+    // 从教学里点 Restart / 正常开局：把教学 UI 一并收掉
+    if (G.tutorial) {
+      G.tutorial = null;
+      clearTimeout(tutorialNextTimer);
+      if (dom.tutorialHud) dom.tutorialHud.hidden = true;
+      if (dom.tutorialOverlay) dom.tutorialOverlay.hidden = true;
+      clearTutorialResult();
+      // 教学把两位都临时设成 human；Restart 时必须按座位下拉恢复
+      G.players[0] = makePlayer(seatVal(dom.seatASelect, 'human'));
+      G.players[1] = makePlayer(seatVal(dom.seatBSelect, 'master'));
+      G.aiVs = bothAI() ? 'on' : 'off';
+      G.paused = false;
+      updatePauseBtn();
+    }
     G.scores = [0, 0];
     G.breaks = [0, 0];
     G.currentPlayer = 0;
@@ -843,6 +1174,7 @@
   // 现在出杆是**独立动作**：鼠标只负责方向，力度和塞由各自控件调，
   // 真正击球要点 "Shoot" 按钮或按空格。
   function canShoot() {
+    if (G.tutorial && G.tutorial.waiting) return false;
     return humanTurn() && G.state === 'aim' && G.cueBall && G.cueBall.isOnTable();
   }
 
@@ -852,6 +1184,7 @@
   const STROKE_HIT_MS = 90;
 
   function shoot() {
+    if (G.tutorial && G.tutorial.waiting) return;
     if (G.state !== 'aim' && G.state !== 'powering' && G.state !== 'dragging') return;
     if (!G.cueBall || !G.cueBall.isOnTable()) return;
     if (G.power < C.MIN_POWER) {
@@ -863,15 +1196,6 @@
     // 出杆前更新一次可击球面（提示 + 3D 抬杆用）。击点本身不在
     // 这里改，strike() 会按同一份 cueClear 夹紧。
     refreshCueClear();
-
-    // 人类是纯手动：当前仰角不够就拒绝出杆，逼玩家自己抬够。
-    if (humanTurn() && G.cueClear && G.cueClear.fit && !G.cueClear.fit.ok) {
-      G.state = 'aim';
-      showMsg(t('msg.raiseCueTitle'), t('msg.raiseCue', {
-        deg: Math.ceil(G.cueClear.fit.requiredDeg),
-      }), 2800);
-      return;
-    }
 
     live.potted = [];
     live.firstContact = null;
@@ -917,8 +1241,7 @@
     if (s.fired || !G.cueBall) return;
     s.fired = true;
     C.strike(G.cueBall, s.angle, s.power, s.spinX, s.spinY,
-      s.pitchDeg * Math.PI / 180, G.balls,
-      G.players[G.currentPlayer].type === 'ai');
+      s.pitchDeg * Math.PI / 180, G.balls);
     if (SNK.bgm) SNK.bgm.cueHit(s.power);      // 皮头触球声（与物理事件无关，出杆即有）
     G.trail = G.balls.map(b => ({ label: b.label, pts: [], color: trailColor(b) }));
     G.trailTime = 0;
@@ -1111,6 +1434,9 @@
   //  球停稳 → 判罚 → 结算
   // ================================================================
   function onSettled() {
+    // 教学模式：不进正常判罚/换人流程，只走课程判定
+    if (G.tutorial) { tutorialOnSettled(); return; }
+
     const pool = (G.gameMode === 'eightball' || G.gameMode === 'nineball');
     const afterLabels = [];
     for (const b of G.balls) if (b.isOnTable()) afterLabels.push(b.label);
@@ -1389,6 +1715,7 @@
   //  AI 调度
   // ================================================================
   function maybeScheduleAI() {
+    if (G.tutorial) return;
     const p = G.players[G.currentPlayer];
     if (!p || p.type !== 'ai') return;
     if (G.state !== 'aim') return;
@@ -1466,9 +1793,6 @@
     if (G.guideMode === 0) return null;                 // 全无：连模拟都不跑
     if (!G.cueBall || !G.cueBall.isOnTable()) return null;
     if (G.state === 'moving' || G.state === 'placing' || G.state === 'over') return null;
-    // 人类杆角不够：不画"假装能打"的预览，先让玩家把杆抬够。
-    if (humanTurn() && G.cueClear && G.cueClear.fit && !G.cueClear.fit.ok) return null;
-
     // 俯仰、后斯诺克夹紧、cos 力度损失全部在 strike() 里做。
     // 预览只要把**同一组原始参数**交给 sim.js，就不会和实机算出两种结果。
     const base = G.power < C.MIN_POWER ? 8 : G.power;
@@ -1486,7 +1810,7 @@
         angle: G.aimAngle, power: base,
         spinX: G.spinX, spinY: G.spinY, pitchDeg: G.pitchDeg,
       },
-      { track: true, autoRaise: !humanTurn() }
+      { track: true }
     );
     previewCache.angle = G.aimAngle;
     return previewCache;
@@ -1521,6 +1845,22 @@
     }
 
     RENDER.drawTable(ctx);
+
+    // 教学目标圈：白球最终位置 / 袋口 / 需要碰到的球
+    if (G.tutorial && G.tutorial.zone) {
+      const z = G.tutorial.zone;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,217,61,0.10)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,217,61,0.75)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 5]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
 
     // 开球摆白球：把 D 区淡淡地高亮出来，提示"只能放在这里"
     if (G.state === 'placing' && C.TABLE_MODE === 'snooker') {
@@ -1582,8 +1922,8 @@
       eff.pitchDeg, eff);
     if (dom.spinText) {
       let txt = tr(RENDER.spinText(eff.sx, eff.sy));
-      if (eff.needMore && eff.requiredDeg >= (SNK.cueClear ? SNK.cueClear.MANUAL_MIN_DEG : 8)) {
-        txt += ' · ' + t('ui.raiseCue', { deg: Math.ceil(eff.requiredDeg) });
+      if (eff.raised && eff.requiredDeg >= (SNK.cueClear ? SNK.cueClear.NOTICE_DEG : 6)) {
+        txt += ' · ' + t('ui.cueRaised', { deg: Math.round(eff.pitchDeg) });
       }
       dom.spinText.textContent = txt;
     }
@@ -1695,24 +2035,23 @@
         G.state !== 'dragging' && G.state !== 'stroking') return null;
     G.cueClear = SNK.cueClear.analyze(G.balls, G.cueBall, G.aimAngle);
 
-    // 人类：autoRaise=false，仰角不够时 fit.ok=false，由 shoot() 拒绝出杆。
-    // AI：autoRaise=true，自动把杆抬到所需角度。
+    // 自动抬杆：把当前击点、当前俯仰交给同一份 fitContact，算出实际仰角。
     const fit = SNK.cueClear.fitContact(G.cueClear, G.spinX, G.spinY,
-      G.pitchDeg * Math.PI / 180, !humanTurn());
+      G.pitchDeg * Math.PI / 180);
     G.cueClear.fit = fit;
     G.cueClear.hardSy = SNK.cueClear.minReachableSy(G.cueClear, fit.sx);
 
-    // 人类杆角不够且要求明显时提示一次（远处的库边 2° 不算）。
-    const need = !fit.ok && fit.requiredDeg >= SNK.cueClear.MANUAL_MIN_DEG &&
+    // 被迫抬杆且角度明显时提示一次（远处的库边 2° 不算）。
+    const raised = fit.raised && fit.requiredDeg >= SNK.cueClear.NOTICE_DEG &&
       humanTurn() && !G.snookerNotice;
     const visit = (G.stats && G.stats[G.currentPlayer])
       ? (G.stats[G.currentPlayer].visits || 0) : 0;
-    const key = need
+    const key = raised
       ? G.currentPlayer + '|' + visit + '|' + (fit.kind || '')
       : '';
-    if (need && key !== G.cueBlockNotice) {
+    if (raised && key !== G.cueBlockNotice) {
       G.cueBlockNotice = key;
-      showMsg(t('msg.raiseCueTitle'), t('msg.raiseCue', {
+      showMsg(t('msg.cueBlockedTitle'), t('msg.cueBlocked', {
         deg: Math.ceil(fit.requiredDeg),
       }), 3200);
     }
@@ -1731,7 +2070,6 @@
         pitchDeg: f.pitchRad * 180 / Math.PI,
         requiredDeg: f.requiredDeg,
         raised: f.raised,
-        needMore: !f.ok,
         clamped: f.clamped,
         hardSy: G.cueClear.hardSy,
       };
@@ -1739,7 +2077,7 @@
     const tip = C.effectiveTip(G.spinX, G.spinY, G.pitchDeg * Math.PI / 180);
     return {
       sx: tip.sx, sy: tip.sy, pitchDeg: G.pitchDeg,
-      requiredDeg: 0, raised: false, needMore: false,
+      requiredDeg: 0, raised: false,
       clamped: false, hardSy: -C.SPIN_MAX,
     };
   }
@@ -2421,6 +2759,7 @@
   }
 
   function autoSaveGame() {
+    if (G.tutorial) return;
     if (!autoSaveEnabled || !canSnapshot() || G.summaryOpen) return;
     C.save.write('auto', C.save.serialize(G));
   }
@@ -2707,6 +3046,19 @@
   if (dom.sumRematch) dom.sumRematch.addEventListener('click', () => resetGame());
   if (dom.sumClose) dom.sumClose.addEventListener('click', () => hideSummary());
 
+  // ---- 教学：菜单 / 目标条 / 结果 ----
+  if (dom.tutorialBtn) dom.tutorialBtn.addEventListener('click', openTutorialMenu);
+  if (dom.tutClose) dom.tutClose.addEventListener('click', closeTutorialMenu);
+  if (dom.tutRetry) dom.tutRetry.addEventListener('click', retryTutorialStep);
+  if (dom.tutMenuBtn) dom.tutMenuBtn.addEventListener('click', openTutorialMenu);
+  if (dom.tutExitBtn) dom.tutExitBtn.addEventListener('click', exitTutorial);
+  if (dom.tutRetryBtn) dom.tutRetryBtn.addEventListener('click', retryTutorialStep);
+  if (dom.tutNextBtn) dom.tutNextBtn.addEventListener('click', nextTutorialLesson);
+  if (dom.tutLessonsBtn) dom.tutLessonsBtn.addEventListener('click', () => {
+    clearTutorialResult();
+    openTutorialMenu();
+  });
+
   // ================================================================
   //  观战镜头手势（全部挂在 #gc 上；非观战时一律直接 return）
   //  #gc 上现有的 mousemove/mousedown 都以 humanTurn() 开头，
@@ -2890,6 +3242,9 @@
     if (dom.volRange) dom.volRange.title = t('ui.volume');
     if (dom.sumRematch) dom.sumRematch.textContent = t('summary.rematch');
     if (dom.sumClose) dom.sumClose.textContent = t('summary.close');
+    if (dom.tutorialBtn) dom.tutorialBtn.textContent = t('ui.tutorial');
+    if (dom.tutorialOverlay && !dom.tutorialOverlay.hidden) renderTutorialGrid();
+    updateTutorialHud();
     const saveTitle = document.querySelector('.save-menu-title');
     if (saveTitle) saveTitle.textContent = t('save.title');
     if (dom.exportSaveBtn) dom.exportSaveBtn.textContent = t('save.export');
@@ -2971,6 +3326,11 @@
   autoSaveEnabled = true;
   autoSaveGame();
   loop();
+
+  // 从 8/9 球模式点教程时自动切回斯诺克并直接打开课程菜单
+  if (location.search.indexOf('tutorial=1') >= 0) {
+    setTimeout(openTutorialMenu, 350);
+  }
 
   // 注意：selftest.js 在本文件之后加载，所以判断必须放进回调里再查一次
   if (location.search.indexOf('selftest') >= 0) {
