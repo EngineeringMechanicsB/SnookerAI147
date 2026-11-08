@@ -2142,7 +2142,7 @@
 
     // 被迫抬杆且角度明显时提示一次（远处的库边 2° 不算）。
     const raised = fit.raised && fit.requiredDeg >= SNK.cueClear.NOTICE_DEG &&
-      humanTurn() && !G.snookerNotice;
+      humanTurn() && !G.snookerNotice && !G.tutorial;
     const visit = (G.stats && G.stats[G.currentPlayer])
       ? (G.stats[G.currentPlayer].visits || 0) : 0;
     const key = raised
