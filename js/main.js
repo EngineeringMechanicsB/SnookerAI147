@@ -677,7 +677,7 @@
   }, 4500);
 
   // ================================================================
-  //  教学模式（GT 驾照式单课练习）
+  //  教学模式（单课练习）
   // ================================================================
   const TUT_DONE_KEY = 'snk.tutorial.done';
   let tutorialMenuWasPaused = false;
@@ -821,7 +821,6 @@
     }
     const lesson = C.tutorial.byId(id);
     if (!lesson) return;
-    if (use3d) toggle3d();                 // 目标圈只画在 2D；教学统一用 2D
     dom.tutorialOverlay.hidden = true;
     clearTutorialResult();
     closeTutorialCoach();
@@ -1934,6 +1933,7 @@
         preview: (G.state === 'aim' || G.state === 'powering' || G.state === 'dragging' || G.state === 'stroking') ? getPreview() : null,
         guideMode: G.guideMode,
         pitchDeg: effSpin.pitchDeg,
+        tutorialZone: (G.tutorial && G.tutorial.zone) ? G.tutorial.zone : null,
         strokePull: G.stroke ? G.stroke.pull : 0,
         trail: G.trail,
         trailTime: G.trailTime,

@@ -99,6 +99,7 @@
   const smokePuffs = [];                // { s, baseX, baseY, baseZ, phase, dur, drift }
   let flyRoot = null, flyGroup = null, flyWings = [];
   let dZone = null;                     // 开球摆球时高亮的 D 区
+  let tutorialRing = null;              // 教学：目标圈（3D 台面上的黄圈）
 
   // ---------- 球桌细节：包金、袋口铜圈、回球轨道 ----------
   let returnRoot = null;
@@ -3274,6 +3275,29 @@
   //  主渲染
   //  view = { balls, cueBall, aimAngle, power, state, preview, trail, onLabel }
   // ================================================================
+  function updateTutorialRing(view) {
+    const z = view.tutorialZone;
+    if (!z) {
+      if (tutorialRing) tutorialRing.visible = false;
+      return;
+    }
+    if (!tutorialRing) {
+      const geo = new THREE.RingGeometry(0.94, 1, 64);
+      geo.rotateX(-Math.PI / 2);
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xffd93d, transparent: true, opacity: 0.75,
+        side: THREE.DoubleSide, depthWrite: false,
+      });
+      tutorialRing = new THREE.Mesh(geo, mat);
+      tutorialRing.renderOrder = 4;
+      scene.add(tutorialRing);
+    }
+    tutorialRing.visible = true;
+    tutorialRing.position.set(X(z.x), 0.55, Z(z.y));
+    tutorialRing.scale.set(z.r, 1, z.r);
+    tutorialRing.material.opacity = 0.55 + Math.sin(Date.now() * 0.004) * 0.15;
+  }
+
   function render(view) {
     if (!ready) return;
     const dt = frameDt();
@@ -3322,6 +3346,7 @@
     // 落袋后的小球沿台下铜轨滚向球箱（纯视觉）
     updateReturnBalls(dt, balls);
     if (dZone) dZone.visible = view.state === 'placing';
+    updateTutorialRing(view);
 
     // ---- 目标球光环 ----
     let ri = 0;

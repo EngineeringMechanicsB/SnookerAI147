@@ -578,15 +578,13 @@ body.orbit-view.dragging canvas#gc { cursor:grabbing; }
 }
 .spectate-hint.show { opacity:1; }
 
-/* ---------- 教学模式：GT 驾照式单课练习 ---------- */
+/* ---------- 教学模式：单课练习 ---------- */
 .tutorial-hud {
-  position:absolute; top:112px; left:20px;
-  z-index:33; display:flex; align-items:center; flex-wrap:wrap; gap:6px 14px;
-  max-width:min(680px, calc(100% - 40px));
-  padding:8px 14px; border-radius:var(--r-blk);
-  background:rgba(8,12,20,0.78); backdrop-filter:blur(10px);
-  border:1px solid rgba(255,217,61,0.22);
-  box-shadow:0 10px 30px rgba(0,0,0,0.35);
+  order:-1; flex:0 0 100%; width:100%; box-sizing:border-box;
+  display:flex; align-items:center; flex-wrap:wrap; gap:6px 14px;
+  padding:7px 12px; border-radius:var(--r-blk);
+  background:rgba(8,12,20,0.55);
+  border:1px solid rgba(255,217,61,0.16);
 }
 .tutorial-hud[hidden] { display:none; }
 .tut-hud-text { display:flex; align-items:baseline; gap:8px; min-width:0; }

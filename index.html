@@ -120,6 +120,23 @@
        第八轮先改成普通流，第九轮挪到**台面下方**，视线先看球台、再看控件。 -->
   <div class="control-bar" id="controlBar">
 
+    <!-- 教学：目标条放在控制条内，不压台面 -->
+    <div class="tutorial-hud" id="tutorialHud" hidden>
+      <div class="tut-hud-text">
+        <span class="tut-step" id="tutStep"></span>
+        <b id="tutName"></b>
+        <span class="tut-goal" id="tutGoal"></span>
+      </div>
+      <div class="tut-hud-actions">
+        <button class="tut-mini" id="tutCoach">Coach</button>
+        <button class="tut-mini primary" id="tutDemo">Demo</button>
+        <button class="tut-mini" id="tutRetry">Retry</button>
+        <button class="tut-mini" id="tutMenuBtn">Lessons</button>
+        <button class="tut-mini" id="tutExitBtn">Exit</button>
+      </div>
+      <div class="tut-coach-line" id="tutCoachLine"></div>
+    </div>
+
     <!-- 加塞控制盘：内圈 = 击点，外圈下半圆 = 球杆俯仰 -->
     <div class="spin-wrap">
       <canvas id="spinPad" width="220" height="220"></canvas>
@@ -207,28 +224,10 @@
     </div>
   </div>
 
-  <!-- 教学：进行中的目标条 + 课程选择 + 单步结果 -->
-  <div class="tutorial-hud" id="tutorialHud" hidden>
-    <div class="tut-hud-text">
-      <span class="tut-step" id="tutStep"></span>
-      <b id="tutName"></b>
-      <span class="tut-goal" id="tutGoal"></span>
-    </div>
-    <div class="tut-hud-actions">
-      <button class="tut-mini" id="tutCoach">Coach</button>
-      <button class="tut-mini primary" id="tutDemo">Demo</button>
-      <button class="tut-mini" id="tutRetry">Retry</button>
-      <button class="tut-mini" id="tutMenuBtn">Lessons</button>
-      <button class="tut-mini" id="tutExitBtn">Exit</button>
-    </div>
-    <div class="tut-coach-line" id="tutCoachLine"></div>
-  </div>
-
   <div class="tutorial-overlay" id="tutorialOverlay" hidden>
     <div class="tutorial-panel">
       <div class="tutorial-head">
         <div>
-          <div class="tutorial-kicker" id="tutKicker">Practice like a licence test</div>
           <h2 id="tutTitle">Tutorial</h2>
         </div>
         <button class="tut-close" id="tutClose" title="Close">&times;</button>

@@ -79,6 +79,72 @@
         '先不碰库边，只看单颗球：高杆让白球跟，低杆让白球缩，侧塞让白球偏、同时把目标球甩向一侧。'),
       steps: [
         {
+          title: L('Centre hit: stun', '中心击点：定杆'),
+          goal: L('Leave the white near the contact point', '白球停在撞击点附近'),
+          focus: L('Centre contact: stun. The red takes the pace.', '中心击点：定杆，红球带走速度。'),
+          tip: L('Hit the centre of the white with a smooth stroke. The white should stop near the contact point, not follow or draw.',
+            '平顺地打白球正中心。白球应停在撞击点附近，不跟也不缩。'),
+          coach: L(
+            '1. Centre contact, no side, no top or bottom. The white stops close to the contact point; the object ball takes most of the pace. This is a stun shot.\n' +
+            '2. Keep the cue level and accelerate through the ball. A flat, committed stroke gives a clean stun; a soft poke lets gravity and cloth friction add a little roll.\n' +
+            '3. Use: this is the reference shot for every spin. When the next ball is close to the contact point, stun is often the simplest position.',
+            '1. 击点正中，不加塞、不高杆、不低杆。白球停在撞击点附近，目标球带走大部分速度。这就是定杆。\n' +
+            '2. 球杆放平，加速穿过白球。果断的平杆得到干净的定杆；软绵绵一戳，台呢摩擦会让白球多滚一点。\n' +
+            '3. 使用场景：这是所有杆法的参照。下一颗球就在撞击点附近时，定杆往往是最简单的叫位。'),
+          demo: { angle: 0, power: 14, spinX: 0, spinY: 0 },
+          setup: function (C) {
+            return {
+              cue: { x: C.CX_TABLE - 150, y: C.CY2 },
+              balls: [{ label: 'red', x: C.CX_TABLE + 50, y: C.CY2 }],
+              aimAngle: 0,
+              power: 14, spinX: 0, spinY: 0, pitchDeg: 0,
+              guideMode: 2,
+              zone: { x: C.CX_TABLE + 101, y: C.CY2, r: 35 },
+            };
+          },
+          check: function (ctx) {
+            if (ctx.firstContact === 'red' && near(ctx.cue, ctx.zone) && !ctx.cue.potted) {
+              return { pass: true, msg: L('Clean stun. The white stopped at the contact point.',
+                '干净的定杆。白球停在撞击点附近。') };
+            }
+            return { pass: false, msg: L('The white ran too far. Strike the centre with a smooth, level stroke.',
+              '白球跑远了。打正中心，出杆平顺。') };
+          },
+        },
+        {
+          title: L('Cue pitch: butt angle', '杆角：抬杆尾'),
+          goal: L('Finish with the white inside the forward circle', '白球停在前方黄圈内'),
+          focus: L('Pitch adds follow and costs power.', '抬杆增加跟球，也吃掉力量。'),
+          tip: L('Use the outer pitch ring. A moderate butt angle adds follow; too steep and the white loses too much speed.',
+            '用外圈俯仰环。适度抬杆会增加跟球；抬得太陡，白球反而走不远。'),
+          coach: L(
+            '1. Contact point and butt angle are two different controls. Contact point sets the spin; butt angle changes the cue’s approach, adds follow and loses forward speed by cos(angle).\n' +
+            '2. About 15–30° gives the most follow here. At 45–60° the speed loss overtakes the follow; the white can finish shorter than a flat centre hit.\n' +
+            '3. Use: when you need extra follow without moving the contact point, or when a ball or cushion forces the butt up. The game auto-raises the cue over a blocker; the pitch ring lets you add more.',
+            '1. 击点和杆角是两个不同的控制。击点决定旋转；杆角改变出杆角度，增加跟球，同时按 cos(角度) 损失前向速度。\n' +
+            '2. 这里 15–30° 的跟球最多。到 45–60°，速度损失超过跟球收益，白球可能比平杆停得还近。\n' +
+            '3. 使用场景：需要额外跟球但不想改击点时，或者球/库边逼你把杆尾抬高时。被挡时游戏会自动抬杆，俯仰环可以再加。'),
+          demo: { angle: 0, power: 16, spinX: 0, spinY: 0, pitchDeg: 25 },
+          setup: function (C) {
+            return {
+              cue: { x: C.CX_TABLE - 150, y: C.CY2 },
+              balls: [{ label: 'red', x: C.CX_TABLE + 50, y: C.CY2 }],
+              aimAngle: 0,
+              power: 16, spinX: 0, spinY: 0, pitchDeg: 0,
+              guideMode: 2,
+              zone: { x: C.CX_TABLE + 168, y: C.CY2, r: 45 },
+            };
+          },
+          check: function (ctx) {
+            if (ctx.firstContact === 'red' && near(ctx.cue, ctx.zone) && !ctx.cue.potted) {
+              return { pass: true, msg: L('That is cue pitch: the butt angle added follow without changing the contact point.',
+                '这就是杆角：不攻击点，靠抬杆尾增加跟球。') };
+            }
+            return { pass: false, msg: L('Set the pitch ring around 20–30° and hit the centre of the white.',
+              '把俯仰环调到 20–30° 左右，打白球中心。') };
+          },
+        },
+        {
           title: L('Top spin: follow', '高杆：跟球'),
           goal: L('Finish with the white inside the yellow circle ahead', '白球停在前方黄圈内'),
           focus: L('Top spin: white follows the object ball.', '高杆：白球跟着目标球走。'),
@@ -87,10 +153,12 @@
           coach: L(
             '1. Contact point: one or two tips above centre. A slightly higher bridge keeps the cue level; the tip must not dig into the cloth.\n' +
             '2. Accelerate through the white and hold the finish. The cue ball keeps its forward rotation after impact, so it follows the object ball.\n' +
-            '3. Common fault: a short, jabby stroke produces stun, not follow. If the white stops at contact, you decelerated.',
+            '3. Common fault: a short, jabby stroke produces stun, not follow. If the white stops at contact, you decelerated.\n' +
+            '4. Use: when the next ball is in front of the contact point and you want the white to travel forward through it.',
             '1. 击点：中心上方一到两个皮头。架手略高，球杆保持水平，皮头不要扎进台呢。\n' +
             '2. 加速穿过白球，出杆后停住。白球撞球后保留前滚，所以会跟着目标球走。\n' +
-            '3. 常见错误：短促一戳，打出来的是定杆，不是跟球。白球撞完就停，说明你减速了。'),
+            '3. 常见错误：短促一戳，打出来的是定杆，不是跟球。白球撞完就停，说明你减速了。\n' +
+            '4. 使用场景：下一颗球在撞击点前方，需要白球继续向前走。'),
           demo: { angle: 0, power: 14, spinX: 0, spinY: 0.6 },
           setup: function (C) {
             return {
@@ -120,10 +188,12 @@
           coach: L(
             '1. Contact point: one or two tips below centre. Keep the cue level; if the butt drops, the tip can jump or tear the cloth.\n' +
             '2. Draw needs speed through the ball. Accelerate, do not poke. The white slides first, then the backspin takes over and screws it back.\n' +
-            '3. Common fault: deceleration. A soft, decelerating stroke gives stun, not screw. Play it firm and finish the stroke.',
+            '3. Common fault: deceleration. A soft, decelerating stroke gives stun, not screw. Play it firm and finish the stroke.\n' +
+            '4. Use: when the next ball is behind the contact point, or when you need to bring the white back out of a crowd.',
             '1. 击点：中心下方一到两个皮头。球杆保持水平；杆尾一掉，皮头容易跳球或刮坏台呢。\n' +
             '2. 低杆需要穿过球的速度。加速，不要戳。白球先滑，然后回旋把它拉回来。\n' +
-            '3. 常见错误：减速。软绵绵地出杆只会得到定杆，不是缩杆。发力，把杆送完。'),
+            '3. 常见错误：减速。软绵绵地出杆只会得到定杆，不是缩杆。发力，把杆送完。\n' +
+            '4. 使用场景：下一颗球在撞击点后方，或者需要把白球从球堆里拉出来。'),
           demo: { angle: 0, power: 18, spinX: 0, spinY: -0.6 },
           setup: function (C) {
             return {
@@ -153,10 +223,12 @@
           coach: L(
             '1. Side is named from the player’s view: right side is the right half of the white. The cue tip pushes the white away from the tip (squirt), so the white leaves slightly left.\n' +
             '2. At contact the spinning white rubs across the red and throws it to the right. This is throw; it is not aim. Allow for it or aim to use it.\n' +
-            '3. Common fault: using side on every shot. Side adds squirt, swerve and throw; on a long pot, centre ball is more reliable.',
+            '3. Common fault: using side on every shot. Side adds squirt, swerve and throw; on a long pot, centre ball is more reliable.\n' +
+            '4. Use: to throw a ball into a pocket, to make the white squirt away from a blocker, or to set up the angle for the next cushion.',
             '1. 侧塞按球员视角命名：右塞就是白球右半边。皮头会把白球往反方向推（偏杆），所以白球出杆时略向左。\n' +
             '2. 撞球瞬间，带旋的白球在红球表面蹭过，把红球甩向右侧。这是“甩球”，不是瞄歪了；要么修正，要么利用它。\n' +
-            '3. 常见错误：每杆都加塞。侧塞会带来偏杆、弧线和甩球；长台中心球更可靠。'),
+            '3. 常见错误：每杆都加塞。侧塞会带来偏杆、弧线和甩球；长台中心球更可靠。\n' +
+            '4. 使用场景：把球甩进袋、让白球避开挡球，或者为下一库调整角度。'),
           demo: { angle: 0, power: 14, spinX: 0.6, spinY: 0 },
           setup: function (C) {
             return {
@@ -187,10 +259,12 @@
           coach: L(
             '1. Left side mirrors right side: the white leaves slightly right (squirt), and the red is thrown to the left.\n' +
             '2. The stronger the side and the slower the shot, the more time swerve has to bend the white. On firm shots, squirt dominates.\n' +
-            '3. Use side with a purpose: position, cushion angle or throwing a ball into a pocket. Do not add it by habit.',
+            '3. Use side with a purpose: position, cushion angle or throwing a ball into a pocket. Do not add it by habit.\n' +
+            '4. Use: mirror of right side — throw the red left or make the white squirt right.',
             '1. 左塞是右塞的镜像：白球出杆略向右（偏杆），红球被甩向左侧。\n' +
             '2. 塞越强、球越慢，弧线越有时间把白球带弯；发力球以偏杆为主。\n' +
-            '3. 侧塞要有目的：走位、库边角度，或者把球“甩”进袋。不要养成每杆都加的习惯。'),
+            '3. 侧塞要有目的：走位、库边角度，或者把球“甩”进袋。不要养成每杆都加的习惯。\n' +
+            '4. 使用场景：右塞的镜像——把红球甩向左，或让白球向右偏。'),
           demo: { angle: 0, power: 14, spinX: -0.6, spinY: 0 },
           setup: function (C) {
             return {
@@ -210,6 +284,146 @@
             }
             return { pass: false, msg: L('Use strong left side. Watch the white squirt right and the red throw left.',
               '用强一点的左塞。看白球往右偏、红球往左甩。') };
+          },
+        },
+        {
+          title: L('Top + right: follow-left', '高杆右塞：前左'),
+          goal: L('Finish with the white in the forward-left circle', '白球停在前方偏左的黄圈内'),
+          focus: L('Forward roll plus right side: the white runs forward-left, the red is thrown right.', '前滚加右塞：白球往左前跑，红球往右甩。'),
+          tip: L('Top and right side together. Watch the white run forward, then bend left; the red is thrown right.',
+            '高杆加右塞。看白球先向前、再往左弯；红球被甩向右侧。'),
+          coach: L(
+            '1. Top + right combines forward roll and right side. The white runs forward after contact, while squirt takes it left; the red is thrown right.\n' +
+            '2. Route: the white follows first, then the side bends it. Finish in the forward-left circle. The red is also thrown right, so allow for it on the pot.\n' +
+            '3. Use: when the next ball is forward and to your left. A common position shot: pot the red, follow with right side, land on the black side of the table.\n' +
+            '4. Common fault: too much side. The white curves away from the position circle; use one to one-and-a-half tips.',
+            '1. 高杆加右塞：前滚加右塞。白球撞球后向前，同时偏杆把它带向左；红球被甩向右。\n' +
+            '2. 线路：白球先跟，再被塞带弯。目标是前方偏左的黄圈。红球同时被甩向右，进球要留出修正。\n' +
+            '3. 使用场景：下一颗球在前方偏左。常见叫位：打进红球，高杆右塞，白球落到黑球那一侧。\n' +
+            '4. 常见错误：右塞太多，白球弯出黄圈。用一到一点五个皮头就够。'),
+          demo: { angle: 0, power: 18, spinX: 0.6, spinY: 0.6 },
+          setup: function (C) {
+            return {
+              cue: { x: C.CX_TABLE - 150, y: C.CY2 },
+              balls: [{ label: 'red', x: C.CX_TABLE + 50, y: C.CY2 }],
+              aimAngle: 0,
+              power: 18, spinX: 0, spinY: 0, pitchDeg: 0,
+              guideMode: 2,
+              zone: { x: C.CX_TABLE + 282, y: C.CY2 - 82, r: 35 },
+            };
+          },
+          check: function (ctx) {
+            if (ctx.firstContact === 'red' && near(ctx.cue, ctx.zone) && !ctx.cue.potted) {
+              return { pass: true, msg: L('High + right: the white followed and bent left. That is the forward-left route.',
+                '高杆右塞：白球向前跟，再往左弯。这就是前左线路。') };
+            }
+            return { pass: false, msg: L('Use strong top and right side. Aim the white into the forward-left circle.',
+              '用强高杆加右塞，把白球送到前方偏左的黄圈。') };
+          },
+        },
+        {
+          title: L('Top + left: follow-right', '高杆左塞：前右'),
+          goal: L('Finish with the white in the forward-right circle', '白球停在前方偏右的黄圈内'),
+          focus: L('Forward roll plus left side: the white runs forward-right, the red is thrown left.', '前滚加左塞：白球往右前跑，红球往左甩。'),
+          tip: L('Top and left side. The white runs forward, then bends right; the red is thrown left.',
+            '高杆加左塞。白球先向前、再往右弯；红球被甩向左侧。'),
+          coach: L(
+            '1. Top + left is the mirror of top + right: the white follows, then left side bends it right; the red is thrown left.\n' +
+            '2. Route: forward-right circle. This is the natural route for a red on the left of the table when the next ball is on the right.\n' +
+            '3. Use: when the next ball is forward and to your right, or when you want to follow into the right side of the pack.\n' +
+            '4. Common fault: hitting too hard. The follow overshoots and the bend becomes harder to judge; keep the pace smooth.',
+            '1. 高杆左塞是右塞的镜像：白球先跟，再被左塞带向右；红球被甩向左。\n' +
+            '2. 线路：前方偏右的黄圈。下一颗球在右侧时，这是很自然的线路。\n' +
+            '3. 使用场景：下一颗球在前方偏右，或者要高杆跟进球堆右侧。\n' +
+            '4. 常见错误：发力过猛。白球冲过头，弯线也难判断；力度放平顺。'),
+          demo: { angle: 0, power: 18, spinX: -0.6, spinY: 0.6 },
+          setup: function (C) {
+            return {
+              cue: { x: C.CX_TABLE - 150, y: C.CY2 },
+              balls: [{ label: 'red', x: C.CX_TABLE + 50, y: C.CY2 }],
+              aimAngle: 0,
+              power: 18, spinX: 0, spinY: 0, pitchDeg: 0,
+              guideMode: 2,
+              zone: { x: C.CX_TABLE + 282, y: C.CY2 + 82, r: 35 },
+            };
+          },
+          check: function (ctx) {
+            if (ctx.firstContact === 'red' && near(ctx.cue, ctx.zone) && !ctx.cue.potted) {
+              return { pass: true, msg: L('High + left: the white followed and bent right. That is the forward-right route.',
+                '高杆左塞：白球向前跟，再往右弯。这就是前右线路。') };
+            }
+            return { pass: false, msg: L('Use strong top and left side. Aim the white into the forward-right circle.',
+              '用强高杆加左塞，把白球送到前方偏右的黄圈。') };
+          },
+        },
+        {
+          title: L('Bottom + right: draw-left', '低杆右塞：后左'),
+          goal: L('Finish with the white in the back-left circle', '白球停在后方偏左的黄圈内'),
+          focus: L('Draw plus right side: the white screws back-left, the red is thrown right.', '低杆加右塞：白球往左后缩，红球往右甩。'),
+          tip: L('Bottom and right side, firm stroke. The white screws back, then bends left; the red is thrown right.',
+            '低杆加右塞，发力。白球先往回缩，再往左弯；红球被甩向右侧。'),
+          coach: L(
+            '1. Bottom + right: the white screws back after contact, then right side bends it left; the red is thrown right.\n' +
+            '2. Route: back-left circle. This is a recovery route: pot the ball and bring the white back out of the pack towards the left.\n' +
+            '3. Use: when the next ball is behind and to your left, or when you need to escape a crowd after the pot.\n' +
+            '4. Common fault: the draw is too weak. The white stops before the circle; commit to the low contact and accelerate.',
+            '1. 低杆加右塞：白球撞球后先往回缩，再被右塞带向左；红球被甩向右。\n' +
+            '2. 线路：后方偏左的黄圈。这是一条“解围”线路：进球后把白球从球堆里拉向左后方。\n' +
+            '3. 使用场景：下一颗球在后方偏左，或者进球后需要从人群中脱身。\n' +
+            '4. 常见错误：低杆不够。白球停在黄圈前；打低点，果断加速。'),
+          demo: { angle: 0, power: 18, spinX: 0.6, spinY: -0.6 },
+          setup: function (C) {
+            return {
+              cue: { x: C.CX_TABLE - 150, y: C.CY2 },
+              balls: [{ label: 'red', x: C.CX_TABLE + 50, y: C.CY2 }],
+              aimAngle: 0,
+              power: 18, spinX: 0, spinY: 0, pitchDeg: 0,
+              guideMode: 2,
+              zone: { x: C.CX_TABLE - 23, y: C.CY2 - 34, r: 35 },
+            };
+          },
+          check: function (ctx) {
+            if (ctx.firstContact === 'red' && near(ctx.cue, ctx.zone) && !ctx.cue.potted) {
+              return { pass: true, msg: L('Draw + right: the white screwed back and bent left. That is the back-left route.',
+                '低杆右塞：白球缩回并向左弯。这就是后左线路。') };
+            }
+            return { pass: false, msg: L('Use deep draw and right side. Bring the white into the back-left circle.',
+              '用强低杆加右塞，把白球送到后方偏左的黄圈。') };
+          },
+        },
+        {
+          title: L('Bottom + left: draw-right', '低杆左塞：后右'),
+          goal: L('Finish with the white in the back-right circle', '白球停在后方偏右的黄圈内'),
+          focus: L('Draw plus left side: the white screws back-right, the red is thrown left.', '低杆加左塞：白球往右后缩，红球往左甩。'),
+          tip: L('Bottom and left side. The white screws back, then bends right; the red is thrown left.',
+            '低杆加左塞。白球先往回缩，再往右弯；红球被甩向左侧。'),
+          coach: L(
+            '1. Bottom + left is the mirror of bottom + right: the white screws back and bends right; the red is thrown left.\n' +
+            '2. Route: back-right circle. Use it when the next ball is behind and to your right.\n' +
+            '3. This is the hardest of the four combinations: draw and side fight each other for the cue ball’s energy. Play it firm and keep the cue level.\n' +
+            '4. Common fault: too much side on a slow shot. The white swerves; use a firm stroke and one to one-and-a-half tips.',
+            '1. 低杆左塞是右塞的镜像：白球往回缩，再往右弯；红球被甩向左。\n' +
+            '2. 线路：后方偏右的黄圈。下一颗球在后方偏右时用它。\n' +
+            '3. 这是四种组合里最难的：低杆和侧塞在抢白球的能量。发力，杆放平。\n' +
+            '4. 常见错误：慢球加太多塞，白球走出弧线。用发力球，一到一点五个皮头。'),
+          demo: { angle: 0, power: 18, spinX: -0.6, spinY: -0.6 },
+          setup: function (C) {
+            return {
+              cue: { x: C.CX_TABLE - 150, y: C.CY2 },
+              balls: [{ label: 'red', x: C.CX_TABLE + 50, y: C.CY2 }],
+              aimAngle: 0,
+              power: 18, spinX: 0, spinY: 0, pitchDeg: 0,
+              guideMode: 2,
+              zone: { x: C.CX_TABLE - 23, y: C.CY2 + 34, r: 35 },
+            };
+          },
+          check: function (ctx) {
+            if (ctx.firstContact === 'red' && near(ctx.cue, ctx.zone) && !ctx.cue.potted) {
+              return { pass: true, msg: L('Draw + left: the white screwed back and bent right. That is the back-right route.',
+                '低杆左塞：白球缩回并向右弯。这就是后右线路。') };
+            }
+            return { pass: false, msg: L('Use deep draw and left side. Bring the white into the back-right circle.',
+              '用强低杆加左塞，把白球送到后方偏右的黄圈。') };
           },
         },
       ],
