@@ -1498,8 +1498,7 @@
         state: G.state,
         preview: (G.state === 'aim' || G.state === 'powering' || G.state === 'dragging' || G.state === 'stroking') ? getPreview() : null,
         guideMode: G.guideMode,
-        pitchDeg: G.pitchDeg,
-        cueBlockPitchDeg: (G.cueClear && G.cueClear.blocked) ? G.cueClear.pitchDeg : 0,
+        pitchDeg: effSpin.pitchDeg,
         strokePull: G.stroke ? G.stroke.pull : 0,
         trail: G.trail,
         trailTime: G.trailTime,
@@ -1533,7 +1532,7 @@
       if (G.guideMode > 0) RENDER.drawPreview(ctx, G.cueBall, getPreview(), G.aimAngle, G.guideMode);
     }
 
-    RENDER.drawBalls(ctx, G.balls, G.cueBall, effSpin.sx, effSpin.sy, G.aimAngle, G.pitchDeg);
+    RENDER.drawBalls(ctx, G.balls, G.cueBall, effSpin.sx, effSpin.sy, G.aimAngle, effSpin.pitchDeg);
 
     // 上一杆轨迹回放：停杆后 1.6 秒内淡出
     if (G.trailTime && G.trail.length && G.state !== 'moving') {
@@ -1543,11 +1542,9 @@
     }
 
     if (G.state === 'aim' || G.state === 'powering' || G.state === 'dragging' || G.state === 'stroking') {
-      // 球杆被挡时必须抬杆：2D 里也按同一仰角画，否则看起来像穿过球
-      const visPitch = Math.max(G.pitchDeg,
-        (G.cueClear && G.cueClear.blocked) ? G.cueClear.pitchDeg : 0);
+      // 球杆按实际仰角画（被挡时已由 fitContact 抬到最低安全角）
       RENDER.drawCue(ctx, G.cueBall, G.aimAngle, G.power, G.state,
-        visPitch, G.stroke ? G.stroke.pull : 0);
+        effSpin.pitchDeg, G.stroke ? G.stroke.pull : 0);
     }
 
     // 白球脉冲
@@ -1570,11 +1567,11 @@
     const human = G.players[G.currentPlayer].type === 'human';
     const eff = effectiveSpin();
     RENDER.drawSpinPad(spinCtx, spinPad.width, eff.sx, eff.sy, human,
-      G.pitchDeg, G.cueClear);
+      eff.pitchDeg, eff);
     if (dom.spinText) {
       let txt = tr(RENDER.spinText(eff.sx, eff.sy));
-      if (G.cueClear && G.cueClear.blocked) {
-        txt += ' · ' + t('ui.topOnly', { pct: Math.round(G.cueClear.topFrac * 100) });
+      if (eff.raised && eff.requiredDeg >= 8) {
+        txt += ' · ' + t('ui.cueRaised', { deg: Math.round(eff.pitchDeg) });
       }
       dom.spinText.textContent = txt;
     }
@@ -1686,32 +1683,51 @@
         G.state !== 'dragging' && G.state !== 'stroking') return null;
     G.cueClear = SNK.cueClear.analyze(G.balls, G.cueBall, G.aimAngle);
 
-    // 每回合第一次被挡时提示一次，别让玩家以为盘面坏了。
-    // 完全被斯诺克时已经有更重要的提示，别再抢消息条
-    const blocked = G.cueClear.blocked && humanTurn() && !G.snookerNotice;
+    // 把当前击点、当前俯仰交给同一份 fitContact：算出实际要用的仰角，
+    // 以及 60° 都够不到时被迫往上抬的击点。
+    const fit = SNK.cueClear.fitContact(G.cueClear, G.spinX, G.spinY,
+      G.pitchDeg * Math.PI / 180);
+    G.cueClear.fit = fit;
+    G.cueClear.hardSy = SNK.cueClear.minReachableSy(G.cueClear, fit.sx);
+
+    // 只在"确实被迫抬杆"且角度明显时提示一次（远处的库边 2° 不算）。
+    const blocked = fit.raised && fit.requiredDeg >= 8 &&
+      humanTurn() && !G.snookerNotice;
     const visit = (G.stats && G.stats[G.currentPlayer])
       ? (G.stats[G.currentPlayer].visits || 0) : 0;
     const key = blocked
-      ? G.currentPlayer + '|' + visit + '|' + G.cueClear.kind
+      ? G.currentPlayer + '|' + visit + '|' + (fit.kind || '')
       : '';
     if (blocked && key !== G.cueBlockNotice) {
       G.cueBlockNotice = key;
       showMsg(t('msg.cueBlockedTitle'), t('msg.cueBlocked', {
-        pct: Math.round(G.cueClear.topFrac * 100),
-        deg: Math.round(G.cueClear.pitchDeg),
+        deg: Math.round(fit.requiredDeg),
       }), 3200);
     }
     return G.cueClear;
   }
 
-  // 实际生效的击点：被挡时夹到可击面内。
-  // **不改 G.spinX/G.spinY 本身**——否则玩家只是把瞄准线扫过挡球，
-  // 设置就会被永久顶到高杆，转开以后也回不来。
+  // 实际生效的击点/仰角。**不改 G.spinX/G.spinY 本身**——否则玩家只是
+  // 把瞄准线扫过挡球，设置就会被永久顶到高杆，转开以后也回不来。
   function effectiveSpin() {
-    if (SNK.cueClear && G.cueClear && G.cueClear.blocked) {
-      return SNK.cueClear.clampSpin(G.cueClear, G.spinX, G.spinY);
+    const f = G.cueClear && G.cueClear.fit;
+    if (f) {
+      // 玩家主动抬杆还会带来高杆增量；盘面显示的是最终真正打到的点。
+      const tip = C.effectiveTip(f.sx, f.sy, G.pitchDeg * Math.PI / 180);
+      return {
+        sx: tip.sx, sy: tip.sy,
+        pitchDeg: f.pitchRad * 180 / Math.PI,
+        requiredDeg: f.requiredDeg,
+        raised: f.raised,
+        clamped: f.clamped,
+        hardSy: G.cueClear.hardSy,
+      };
     }
-    return { sx: G.spinX, sy: G.spinY, clamped: false };
+    const tip = C.effectiveTip(G.spinX, G.spinY, G.pitchDeg * Math.PI / 180);
+    return {
+      sx: tip.sx, sy: tip.sy, pitchDeg: G.pitchDeg,
+      requiredDeg: 0, raised: false, clamped: false, hardSy: -C.SPIN_MAX,
+    };
   }
 
   function aimAt(px, py) {

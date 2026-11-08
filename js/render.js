@@ -476,7 +476,7 @@
   // ================================================================
   //  加塞控制盘
   // ================================================================
-  function drawSpinPad(ctx, size, spinX, spinY, enabled, pitchDeg, clear) {
+  function drawSpinPad(ctx, size, spinX, spinY, enabled, pitchDeg, eff) {
     const cx = size / 2, cy = size / 2;
     // 球面比外圈半环小一圈，把环留给俯仰
     const r = size * 0.30;
@@ -507,12 +507,12 @@
     ctx.beginPath(); ctx.arc(cx, cy, r * C.SPIN_MAX, 0, Math.PI * 2); ctx.stroke();
     ctx.setLineDash([]);
 
-    // ---- 后斯诺克：被球/库边挡住的下半球 ----
-    // 球杆被挡时只能从上往下"盖"着打，盘面下半部（低杆区）整块不可用。
-    // 阴影 + 金色边界线 + 百分比，和 main.js 的实时夹紧是同一套数据。
-    if (clear && clear.blocked) {
-      const syMin = C.clamp(clear.syMin, -1, 1);
-      const by = cy - syMin * r;
+    // ---- 后斯诺克：60° 仰角也够不到的极限区 ----
+    // 正常情况不会有阴影——低杆只是要求更高的杆角，不是不能打。
+    // 只有贴死 + 极限低塞/侧塞，抬到 60° 仍会碰到障碍时才画红区。
+    const hardSy = eff && Number.isFinite(eff.hardSy) ? eff.hardSy : -C.SPIN_MAX;
+    if (hardSy > -C.SPIN_MAX + 1e-4) {
+      const by = cy - C.clamp(hardSy, -1, 1) * r;
       ctx.save();
       ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
       ctx.fillStyle = 'rgba(255,71,87,0.17)';
@@ -527,19 +527,17 @@
       }
       ctx.restore();
 
-      // 边界线（球面上的水平弦）
       const half = Math.sqrt(Math.max(0, r * r - (by - cy) * (by - cy)));
-      ctx.strokeStyle = 'rgba(255,217,61,0.85)';
+      ctx.strokeStyle = 'rgba(255,71,87,0.85)';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.moveTo(cx - half, by); ctx.lineTo(cx + half, by);
       ctx.stroke();
 
-      ctx.fillStyle = 'rgba(255,217,61,0.92)';
+      ctx.fillStyle = 'rgba(255,150,150,0.95)';
       ctx.font = 'bold 8px sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('↑ ' + Math.round(clear.topFrac * 100) + '%',
-        cx, by + (cy + r - by) * 0.55);
+      ctx.fillText('MAX', cx, by + (cy + r - by) * 0.55);
     }
 
     // 击点。**纵轴要反过来**：canvas 的 y 向下，而物理里 spinY>0 = 高杆。
@@ -603,6 +601,23 @@
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
     ctx.font = '9px sans-serif';
     ctx.fillText('Pitch ' + Math.round(pitch) + '°', cx, cy + ringR - 13);
+
+    // 后斯诺克的最低仰角：在俯仰环上标一道红刻度。
+    // 杆角低于它时 fitContact 会自动抬上去，所以旋钮本身显示实际角度。
+    if (eff && eff.requiredDeg >= 8) {
+      const req = C.clamp(eff.requiredDeg, 0, C.PITCH_MAX_DEG);
+      const thReq = Math.PI * (1 - req / C.PITCH_MAX_DEG);
+      const cR = Math.cos(thReq), sR = Math.sin(thReq);
+      ctx.strokeStyle = 'rgba(255,120,120,0.95)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(cx + cR * (ringR - ringW / 2 - 2), cy + sR * (ringR - ringW / 2 - 2));
+      ctx.lineTo(cx + cR * (ringR + ringW / 2 + 2), cy + sR * (ringR + ringW / 2 + 2));
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,150,150,0.9)';
+      ctx.font = '8px sans-serif';
+      ctx.fillText('min ' + Math.round(req) + '°', cx, cy + ringR + 9);
+    }
 
     ctx.globalAlpha = 1;
     ctx.restore();

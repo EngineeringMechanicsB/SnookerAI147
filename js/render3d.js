@@ -3527,11 +3527,6 @@
         // 贴库时平杆怎么都不够，强制把杆尾抬到约 30°
         if (backDist < 26) minPitch = Math.max(minPitch, 0.52);
       }
-      // 后斯诺克：背后有球/库边挡杆时，杆必须从它上面跨过去。
-      // 这个角度由 cueclear.js 算，和盘面可击球面是同一套几何。
-      if (view.cueBlockPitchDeg > 0) {
-        minPitch = Math.max(minPitch, view.cueBlockPitchDeg * Math.PI / 180);
-      }
       minPitch = Math.min(minPitch, C.PITCH_MAX_DEG * Math.PI / 180);
       const visPitch = Math.max((view.pitchDeg || 0) * Math.PI / 180, minPitch);
       // 俯仰：绕原点（球心）转，杆尾抬起、杆头仍贴着球

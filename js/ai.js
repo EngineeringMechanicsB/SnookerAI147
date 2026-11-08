@@ -750,9 +750,13 @@
         const ang = Math.atan2(t.y - cue.y, t.x - cue.x);
         const cl = C.cueClear.analyze(world, cue, ang);
         // 只认"球挡杆"。贴库抬杆是普通防守，已有 cush 项，不在这里重复算。
-        if (cl.blocked && cl.kind === 'ball') {
-          const v = 1 - cl.topFrac;
-          if (v > cueBlock) cueBlock = v;
+        // 用中心击点的所需仰角衡量难度：贴死约 45°，隔一个球径约 21°。
+        if (cl.blocked) {
+          const ri = C.cueClear.requiredInfo(cl, 0, 0);
+          if (ri.kind === 'ball') {
+            const v = C.clamp(ri.deg / C.PITCH_MAX_DEG, 0, 1);
+            if (v > cueBlock) cueBlock = v;
+          }
         }
       }
     }
@@ -775,9 +779,9 @@
     s += v.crowd * 900;                                // 白球扎在球堆里
     s -= Math.min(v.cueNear, 700) * 0.9;               // 白球越"孤立"越好
     s -= Math.min(v.escape, 900) * 0.5;                // 对手的目标越远越难解
-    // 后斯诺克：让对手只能抬杆打白球上部。价值高于"直击线多一条"(1000)，
-    // 低于"漏一颗球"(100000)；贴死时最多约 16000，够让 AI 在两种安全球
-    // 之间主动选"杆被挡住"的那一种。
+    // 后斯诺克：让对手必须把杆抬得很高、损失力量。价值高于"直击线多一条"
+    // (1000)，低于"漏一颗球"(100000)；贴死时最多约 18000，够让 AI 在
+    // 两种安全球之间主动选"杆被挡住"的那一种。
     s -= (v.cueBlock || 0) * 24000;
     return s;
   }

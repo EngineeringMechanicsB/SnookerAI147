@@ -111,18 +111,23 @@
   //  高杆 sy>0 → 前滚角速度；低杆 sy<0 → 后滚；右塞 sx>0 → ωz<0。
   // ================================================================
   function strike(cue, angle, power, sx, sy, pitch, balls) {
-    // 后斯诺克：球杆被背后的球/库边挡住时，只能打白球上部。
-    // 先夹击点再走 effectiveTip，保证后续的俯仰增量只会往上抬、不会
-    // 把击点重新压回被挡住的下半部。
+    // 玩家主动设置的俯仰。只有这部分带来 PITCH_FOLLOW_K 的高杆增量；
+    // 被障碍"强迫"抬上去的角度只损失力量，不偷偷改写玩家选的击点。
+    const manualPitch = Number.isFinite(pitch) ? Math.max(0, pitch) : 0;
+    let actualPitch = manualPitch;
+
+    // 后斯诺克：球杆被背后的球/库边挡住时，低杆不是不能打，
+    // 而是必须把杆抬到足够角度。fitContact() 解出这个最小仰角，
+    // 并把 60° 都够不到的极点击点往高杆方向抬。
     if (balls && C.cueClear) {
       const clear = C.cueClear.analyze(balls, cue, angle);
-      if (clear.blocked) {
-        const c = C.cueClear.clampSpin(clear, sx, sy);
-        sx = c.sx;
-        sy = c.sy;
-      }
+      const fit = C.cueClear.fitContact(clear, sx, sy, manualPitch);
+      sx = fit.sx;
+      sy = fit.sy;
+      actualPitch = fit.pitchRad;
     }
-    const tip = effectiveTip(sx, sy, pitch);
+    // 高杆增量按玩家的主动俯仰算；实际杆角只负责 cos 力量损失。
+    const tip = effectiveTip(sx, sy, manualPitch);
     sx = tip.sx; sy = tip.sy;
 
     const off = tip.off;
@@ -133,7 +138,7 @@
     const squirt = -sx * C.SQUIRT_K;
     // 击点越偏，传递到球心的力量越少；抬杆还有 cos(俯仰) 的前向分量损失
     let speed = pw * (1 - C.SPIN_POWER_LOSS * off / C.SPIN_MAX);
-    if (Number.isFinite(pitch) && pitch > 0) speed *= Math.cos(pitch);
+    if (actualPitch > 0) speed *= Math.cos(actualPitch);
     const a = ang + squirt;
 
     cue.vx = Math.cos(a) * speed;
