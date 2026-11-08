@@ -581,9 +581,9 @@ body.orbit-view.dragging canvas#gc { cursor:grabbing; }
 /* ---------- 教学模式：GT 驾照式单课练习 ---------- */
 .tutorial-hud {
   position:absolute; top:112px; left:20px;
-  z-index:33; display:flex; align-items:center; gap:14px;
-  max-width:min(560px, calc(100% - 40px));
-  padding:8px 14px; border-radius:var(--r-pill);
+  z-index:33; display:flex; align-items:center; flex-wrap:wrap; gap:6px 14px;
+  max-width:min(680px, calc(100% - 40px));
+  padding:8px 14px; border-radius:var(--r-blk);
   background:rgba(8,12,20,0.78); backdrop-filter:blur(10px);
   border:1px solid rgba(255,217,61,0.22);
   box-shadow:0 10px 30px rgba(0,0,0,0.35);
@@ -600,12 +600,23 @@ body.orbit-view.dragging canvas#gc { cursor:grabbing; }
 }
 .tut-goal::before { content:'·'; margin-right:6px; color:rgba(255,217,61,0.5); }
 .tut-hud-actions { display:flex; gap:6px; margin-left:auto; }
+.tut-coach-line {
+  flex-basis:100%; padding-top:5px;
+  border-top:1px solid rgba(255,217,61,0.13);
+  color:rgba(255,255,255,0.55); font-size:11px; line-height:1.45;
+}
 .tut-mini {
   background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1);
   color:rgba(255,255,255,0.72); border-radius:var(--r-pill);
   padding:4px 12px; font-size:10px; font-family:inherit; cursor:pointer;
+  white-space:nowrap;
 }
 .tut-mini:hover { background:rgba(255,255,255,0.13); color:#fff; }
+.tut-mini.primary {
+  background:rgba(255,217,61,0.16); border-color:rgba(255,217,61,0.40);
+  color:#ffd93d;
+}
+.tut-mini.primary:hover { background:rgba(255,217,61,0.26); color:#fff; }
 
 .tutorial-overlay {
   position:absolute; inset:0; z-index:38;
@@ -671,6 +682,13 @@ body.orbit-view.dragging canvas#gc { cursor:grabbing; }
 .tutorial-result h3 { margin:0 0 8px; color:#fff; font-size:19px; font-weight:500; }
 .tutorial-result p { margin:0 0 18px; color:rgba(255,255,255,0.55); font-size:12px; line-height:1.6; }
 .tut-result-actions { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+.tut-coach-panel { max-width:640px; }
+.tut-coach-body { max-height:48vh; overflow:auto; padding-right:4px; margin-bottom:16px; }
+.tut-coach-body p {
+  margin:0 0 10px; color:rgba(255,255,255,0.64);
+  font-size:12px; line-height:1.7; letter-spacing:0.15px;
+}
+.tut-coach-body p:last-child { margin-bottom:0; }
 .tut-result-actions .restart-btn.primary {
   background:rgba(255,217,61,0.16); border-color:rgba(255,217,61,0.45); color:#ffd93d;
 }

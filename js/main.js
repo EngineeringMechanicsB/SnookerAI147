@@ -86,7 +86,11 @@
     // 教学
     tutorialBtn: $('tutorialBtn'),
     tutorialHud: $('tutorialHud'), tutStep: $('tutStep'), tutName: $('tutName'), tutGoal: $('tutGoal'),
+    tutDemo: $('tutDemo'), tutCoach: $('tutCoach'), tutCoachLine: $('tutCoachLine'),
     tutRetry: $('tutRetry'), tutMenuBtn: $('tutMenuBtn'), tutExitBtn: $('tutExitBtn'),
+    tutorialCoach: $('tutorialCoach'), tutCoachKicker: $('tutCoachKicker'), tutCoachTitle: $('tutCoachTitle'),
+    tutCoachBody: $('tutCoachBody'), tutCoachClose: $('tutCoachClose'),
+    tutCoachDemo: $('tutCoachDemo'), tutCoachOk: $('tutCoachOk'),
     tutorialOverlay: $('tutorialOverlay'), tutorialGrid: $('tutorialGrid'),
     tutKicker: $('tutKicker'), tutTitle: $('tutTitle'), tutClose: $('tutClose'), tutNote: $('tutNote'),
     tutorialResult: $('tutorialResult'), tutResultMark: $('tutResultMark'),
@@ -724,6 +728,17 @@
     dom.tutStep.textContent = tutStepLabel();
     dom.tutName.textContent = tutText(step.title);
     dom.tutGoal.textContent = tutText(step.goal);
+    if (dom.tutCoachLine) {
+      dom.tutCoachLine.textContent = tutText(step.focus || step.tip || '');
+    }
+    if (dom.tutCoach) {
+      dom.tutCoach.hidden = !step.coach;
+      dom.tutCoach.textContent = t('tut.coach');
+    }
+    if (dom.tutDemo) {
+      dom.tutDemo.hidden = !step.demo;
+      dom.tutDemo.textContent = t('tut.demo');
+    }
     dom.tutRetry.textContent = t('tut.retry');
     dom.tutMenuBtn.textContent = t('tut.lessons');
     dom.tutExitBtn.textContent = t('tut.exit');
@@ -809,11 +824,13 @@
     if (use3d) toggle3d();                 // 目标圈只画在 2D；教学统一用 2D
     dom.tutorialOverlay.hidden = true;
     clearTutorialResult();
+    closeTutorialCoach();
     clearTimeout(tutorialNextTimer);
     G.tutorial = {
       id: id,
       stepIndex: C.clamp(stepIndex | 0, 0, lesson.steps.length - 1),
       waiting: false,
+      demo: false,
       zone: null,
     };
     G.players = [
@@ -847,6 +864,7 @@
 
     G.tutorial.stepIndex = idx;
     G.tutorial.waiting = false;
+    G.tutorial.demo = false;
     G.tutorial.zone = spec.zone || null;
 
     G.balls = [];
@@ -855,6 +873,7 @@
     for (const b of (spec.balls || [])) {
       G.balls.push(new C.Ball(b.x, b.y, b.label));
     }
+    G.tutorial.startBalls = G.balls.map(b => ({ label: b.label, x: b.x, y: b.y }));
 
     G.state = 'aim';
     G.paused = false;
@@ -891,21 +910,99 @@
     updateBallCount();
     updateTutorialHud();
     clearTutorialResult();
+    closeTutorialCoach();
     lastPlain = '';
     if (dom.statusPrev) dom.statusPrev.textContent = '';
     showMsg(tutText(step.title), tutText(step.tip), 5200);
     if (SNK.bgm) SNK.bgm.duck(false);
   }
 
+  function renderTutorialCoach() {
+    const lesson = tutLesson();
+    const step = tutStep();
+    if (!lesson || !step || !step.coach || !dom.tutCoachBody) return;
+    dom.tutCoachKicker.textContent = t('tut.coach');
+    dom.tutCoachTitle.textContent = tutText(step.title);
+    dom.tutCoachBody.textContent = '';
+    const paras = tutText(step.coach).split('\n');
+    for (const para of paras) {
+      if (!para) continue;
+      const p = document.createElement('p');
+      p.textContent = para;
+      dom.tutCoachBody.appendChild(p);
+    }
+    if (dom.tutCoachDemo) {
+      dom.tutCoachDemo.hidden = !step.demo;
+      dom.tutCoachDemo.textContent = t('tut.demo');
+    }
+    if (dom.tutCoachOk) dom.tutCoachOk.textContent = t('tut.close');
+  }
+
+  function openTutorialCoach() {
+    if (!G.tutorial) return;
+    if (G.state === 'moving' || G.state === 'stroking') {
+      showMsg(t('tut.wait'), '', 1200);
+      return;
+    }
+    renderTutorialCoach();
+    if (dom.tutorialCoach) dom.tutorialCoach.hidden = false;
+  }
+
+  function closeTutorialCoach() {
+    if (dom.tutorialCoach) dom.tutorialCoach.hidden = true;
+  }
+
+  function runTutorialDemo() {
+    if (!G.tutorial || G.tutorial.waiting) return;
+    if (G.state !== 'aim' && G.state !== 'powering') return;
+    const step = tutStep();
+    if (!step || !step.demo) return;
+    const d = typeof step.demo === 'function' ? step.demo(C) : step.demo;
+    if (!d) return;
+    clearTutorialResult();
+    clearTimeout(tutorialNextTimer);
+    G.aimAngle = Number.isFinite(d.angle) ? d.angle : G.aimAngle;
+    G.power = Number.isFinite(d.power) ? d.power : G.power;
+    G.spinX = Number.isFinite(d.spinX) ? d.spinX : 0;
+    G.spinY = Number.isFinite(d.spinY) ? d.spinY : 0;
+    G.pitchDeg = Number.isFinite(d.pitchDeg) ? d.pitchDeg : 0;
+    updatePowerDisplay();
+    G.tutorial.demo = true;
+    G.tutorial.waiting = false;
+    shoot();
+    if (G.tutorial) {
+      if (G.state === 'aim') {
+        // 出杆被拒（例如力度异常）：恢复可操作
+        G.tutorial.demo = false;
+        G.tutorial.waiting = false;
+      } else {
+        G.tutorial.waiting = true;
+      }
+    }
+  }
+
   function tutorialOnSettled() {
     const lesson = tutLesson();
     const step = tutStep();
     if (!lesson || !step) return;
+    if (G.tutorial.demo) {
+      G.tutorial.demo = false;
+      G.tutorial.waiting = true;
+      G.state = 'aim';
+      updateHUD();
+      showMsg(t('tut.demoDone'), t('tut.demoDoneSub'), 2200);
+      clearTimeout(tutorialNextTimer);
+      tutorialNextTimer = setTimeout(() => {
+        if (G.tutorial) loadTutorialStep(G.tutorial.stepIndex);
+      }, 2600);
+      return;
+    }
     const ctx = {
       potted: live.potted.slice(),
       firstContact: live.firstContact,
       cue: G.cueBall,
       balls: G.balls,
+      startBalls: G.tutorial.startBalls,
       startCue: G.shotStartCue,
       zone: G.tutorial.zone,
     };
@@ -976,6 +1073,7 @@
     dom.tutorialHud.hidden = true;
     dom.tutorialOverlay.hidden = true;
     clearTutorialResult();
+    closeTutorialCoach();
     applySeats();          // 恢复座位下拉里的正常对手，并重开一局
   }
 
@@ -1077,6 +1175,7 @@
       if (dom.tutorialHud) dom.tutorialHud.hidden = true;
       if (dom.tutorialOverlay) dom.tutorialOverlay.hidden = true;
       clearTutorialResult();
+      closeTutorialCoach();
       // 教学把两位都临时设成 human；Restart 时必须按座位下拉恢复
       G.players[0] = makePlayer(seatVal(dom.seatASelect, 'human'));
       G.players[1] = makePlayer(seatVal(dom.seatBSelect, 'master'));
@@ -3049,6 +3148,14 @@
   // ---- 教学：菜单 / 目标条 / 结果 ----
   if (dom.tutorialBtn) dom.tutorialBtn.addEventListener('click', openTutorialMenu);
   if (dom.tutClose) dom.tutClose.addEventListener('click', closeTutorialMenu);
+  if (dom.tutCoach) dom.tutCoach.addEventListener('click', openTutorialCoach);
+  if (dom.tutCoachClose) dom.tutCoachClose.addEventListener('click', closeTutorialCoach);
+  if (dom.tutCoachOk) dom.tutCoachOk.addEventListener('click', closeTutorialCoach);
+  if (dom.tutCoachDemo) dom.tutCoachDemo.addEventListener('click', () => {
+    closeTutorialCoach();
+    runTutorialDemo();
+  });
+  if (dom.tutDemo) dom.tutDemo.addEventListener('click', runTutorialDemo);
   if (dom.tutRetry) dom.tutRetry.addEventListener('click', retryTutorialStep);
   if (dom.tutMenuBtn) dom.tutMenuBtn.addEventListener('click', openTutorialMenu);
   if (dom.tutExitBtn) dom.tutExitBtn.addEventListener('click', exitTutorial);
@@ -3244,6 +3351,7 @@
     if (dom.sumClose) dom.sumClose.textContent = t('summary.close');
     if (dom.tutorialBtn) dom.tutorialBtn.textContent = t('ui.tutorial');
     if (dom.tutorialOverlay && !dom.tutorialOverlay.hidden) renderTutorialGrid();
+    if (dom.tutorialCoach && !dom.tutorialCoach.hidden) renderTutorialCoach();
     updateTutorialHud();
     const saveTitle = document.querySelector('.save-menu-title');
     if (saveTitle) saveTitle.textContent = t('save.title');

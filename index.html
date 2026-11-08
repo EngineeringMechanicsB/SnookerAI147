@@ -215,10 +215,13 @@
       <span class="tut-goal" id="tutGoal"></span>
     </div>
     <div class="tut-hud-actions">
+      <button class="tut-mini" id="tutCoach">Coach</button>
+      <button class="tut-mini primary" id="tutDemo">Demo</button>
       <button class="tut-mini" id="tutRetry">Retry</button>
       <button class="tut-mini" id="tutMenuBtn">Lessons</button>
       <button class="tut-mini" id="tutExitBtn">Exit</button>
     </div>
+    <div class="tut-coach-line" id="tutCoachLine"></div>
   </div>
 
   <div class="tutorial-overlay" id="tutorialOverlay" hidden>
@@ -244,6 +247,24 @@
         <button class="restart-btn" id="tutRetryBtn">Retry</button>
         <button class="restart-btn primary" id="tutNextBtn">Next</button>
         <button class="restart-btn" id="tutLessonsBtn">Lessons</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 教练笔记：完整的目标 / 动作 / 白球线路 / 常见错误 -->
+  <div class="tutorial-overlay" id="tutorialCoach" hidden>
+    <div class="tutorial-panel tut-coach-panel">
+      <div class="tutorial-head">
+        <div>
+          <div class="tutorial-kicker" id="tutCoachKicker">Coach notes</div>
+          <h2 id="tutCoachTitle">Coach notes</h2>
+        </div>
+        <button class="tut-close" id="tutCoachClose" title="Close">&times;</button>
+      </div>
+      <div class="tut-coach-body" id="tutCoachBody"></div>
+      <div class="tut-result-actions">
+        <button class="restart-btn primary" id="tutCoachDemo">Watch demo</button>
+        <button class="restart-btn" id="tutCoachOk">Close</button>
       </div>
     </div>
   </div>
