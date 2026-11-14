@@ -1109,6 +1109,8 @@
   function updatePlannerHud() {
     if (!dom.plannerHud) return;
     const p = G.plan;
+    if (dom.statusMain) dom.statusMain.hidden = !!p;
+    if (dom.statusPrev) dom.statusPrev.hidden = !!p;
     if (!p) {
       dom.plannerHud.hidden = true;
       return;
@@ -1193,9 +1195,14 @@
     if (p.stage === 0) {
       const idx = plannerPickBall(x, y);
       if (idx < 0) {
-        showMsg(t('plan.title'), t('plan.badBall'), 1200);
+        p.error = t('plan.badBall');
+        updatePlannerHud();
+        setTimeout(() => {
+          if (G.plan === p && p.stage === 0) { p.error = ''; updatePlannerHud(); }
+        }, 1400);
         return;
       }
+      p.error = '';
       p.targetIndex = idx;
       p.stage = 1;
       updatePlannerHud();
@@ -3023,6 +3030,13 @@
       return;
     }
 
+    // ---- 隐藏 / 恢复全部 UI（手打、AI 回合、观战都能用）----
+    if ((e.key === 'h' || e.key === 'H' || e.key === 'Escape') && !e.repeat) {
+      e.preventDefault();
+      toggleUiHidden();
+      return;
+    }
+
     // ---- 辅助线切换（任何时候都能用，纯显示）----
     if ((e.key === 'g' || e.key === 'G') && !e.repeat) {
       e.preventDefault();
@@ -3500,11 +3514,36 @@
 
   // H / Esc 切换"隐藏全部 UI"。
   // .spectate-hint 故意不在隐藏名单里（见 CSS），否则按完 H 就没人知道怎么操作了。
+  let uiAnimTimer = null;
   function toggleUiHidden() {
-    const hidden = document.body.classList.toggle('ui-hidden');
-    if (!hidden) showSpectateHint();
-    scheduleFit();           // 台面槽位从四行网格变成整屏，重新等比适配
+    const body = document.body;
+    clearTimeout(uiAnimTimer);
+    if (body.classList.contains('ui-hidden')) {
+      // 恢复：先撤掉 display:none，固定布局播放入场回弹，再回到网格
+      body.classList.remove('ui-hidden');
+      body.classList.remove('ui-hiding');
+      body.classList.add('ui-anim', 'ui-showing');
+      scheduleFit();
+      uiAnimTimer = setTimeout(() => {
+        body.classList.remove('ui-anim', 'ui-showing');
+        scheduleFit();
+        showSpectateHint();
+      }, 650);
+    } else {
+      // 隐藏：台面立即铺满，HUD/控制条用带过冲的曲线弹出去
+      body.classList.remove('ui-showing');
+      body.classList.add('ui-anim', 'ui-hiding');
+      scheduleFit();
+      uiAnimTimer = setTimeout(() => {
+        body.classList.remove('ui-anim', 'ui-hiding');
+        body.classList.add('ui-hidden');
+        scheduleFit();
+      }, 650);
+    }
   }
+
+  if ($('uiHandleTop')) $('uiHandleTop').addEventListener('click', toggleUiHidden);
+  if ($('uiHandleBottom')) $('uiHandleBottom').addEventListener('click', toggleUiHidden);
 
   // ---- 2D / 3D 视角切换 ----
   function viewBtnText() {

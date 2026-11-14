@@ -87,11 +87,12 @@
 
       sfxBus = ctx.createGain();
       sfxBus.gain.value = SFX_LEVEL;
-      // 音效总线上加一道 6.5kHz 低通：保留咔哒的轮廓，削掉刺耳的"玻璃渣"
+      // 音效总线低通：保留咔哒的轮廓，削掉刺耳的"玻璃渣"。
+      // 9kHz 给皮头瞬态留出真实的高频空气；球/库边本身能量仍在 3kHz 以下。
       sfxLp = ctx.createBiquadFilter();
       sfxLp.type = 'lowpass';
-      sfxLp.frequency.value = 5200;
-      sfxLp.Q.value = 0.7;
+      sfxLp.frequency.value = 9000;
+      sfxLp.Q.value = 0.5;
       sfxBus.connect(sfxLp);
       sfxLp.connect(master);
 
@@ -199,37 +200,70 @@
   function sfxCue(power) {
     const t = now() + 0.001;
     const p = clamp01(power);
-    const hit = Math.pow(p, 0.7);
+    const hit = Math.pow(p, 0.65);
 
-    // 皮头触球的真实结构：
-    //   1~2ms 的高频"啪"（皮头/球面接触瞬态）
-    //   10~20ms 的球体高频模态
-    //   60~90ms 的杆身木头发闷共鸣
-    // 力度越大：瞬态越亮、越响，低频木头重量也越大。
-    const src = noiseSource(whiteNoise(), false);
+    // 真实皮头触球是 1~2ms 的宽带冲击，能量约 500Hz~10kHz。
+    // 分四层：
+    //   1. 宽带接触噪声：高通的"嘶" + 9kHz 低通
+    //   2. 3~4.5kHz 共振尖响：清脆的"啪"
+    //   3. 800~1200Hz 木头/皮头的中频
+    //   4. 150~700Hz 杆身低频重量
+    // 力度越大：噪声更亮、尖响更强、低频更重。
+
+    // 1) broadband contact crack
+    const n1 = noiseSource(whiteNoise(), false);
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.setValueAtTime(650 + p * 650, t);
+    hp.Q.value = 0.6;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(7800 + p * 1200, t);
+    lp.Q.value = 0.5;
+    const g1 = ctx.createGain();
+    g1.gain.setValueAtTime(0.0001, t);
+    g1.gain.linearRampToValueAtTime(0.075 + hit * 0.24, t + 0.0006);
+    g1.gain.exponentialRampToValueAtTime(0.0001, t + 0.010 + p * 0.007);
+    n1.connect(hp); hp.connect(lp); lp.connect(g1); g1.connect(sfxBus);
+    n1.start(t); n1.stop(t + 0.04);
+
+    // 2) resonant tip crack
+    const n2 = noiseSource(whiteNoise(), false);
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
-    bp.frequency.setValueAtTime(2400 + p * 1500 + (Math.random() - 0.5) * 320, t);
-    bp.Q.value = 1.25;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(0.11 + hit * 0.31, t + 0.0008);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.013 + p * 0.007);
-    src.connect(bp); bp.connect(g); g.connect(sfxBus);
-    src.start(t); src.stop(t + 0.045);
+    bp.frequency.setValueAtTime(3200 + p * 1200 + (Math.random() - 0.5) * 260, t);
+    bp.Q.value = 2.2;
+    const g2 = ctx.createGain();
+    g2.gain.setValueAtTime(0.0001, t);
+    g2.gain.linearRampToValueAtTime(0.04 + hit * 0.17, t + 0.0007);
+    g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.009 + p * 0.004);
+    n2.connect(bp); bp.connect(g2); g2.connect(sfxBus);
+    n2.start(t); n2.stop(t + 0.035);
 
-    // 球体高频模态：清脆的主体
-    const f0 = 2380 + p * 820 + (Math.random() - 0.5) * 130;
-    mode(f0, t, 0.018, 0.045 + hit * 0.16);
-    mode(f0 * 1.44, t, 0.012, 0.022 + hit * 0.085);
-    mode(f0 * 2.13, t, 0.008, 0.010 + hit * 0.045);
-    // 极短皮头尖响
-    mode(3850 + p * 520, t, 0.006, 0.016 + hit * 0.035);
+    // 3) wood / tip midrange
+    const n3 = noiseSource(whiteNoise(), false);
+    const bp3 = ctx.createBiquadFilter();
+    bp3.type = 'bandpass';
+    bp3.frequency.setValueAtTime(820 + p * 300, t);
+    bp3.Q.value = 1.1;
+    const g3 = ctx.createGain();
+    g3.gain.setValueAtTime(0.0001, t);
+    g3.gain.linearRampToValueAtTime(0.035 + hit * 0.09, t + 0.001);
+    g3.gain.exponentialRampToValueAtTime(0.0001, t + 0.028 + p * 0.012);
+    n3.connect(bp3); bp3.connect(g3); g3.connect(sfxBus);
+    n3.start(t); n3.stop(t + 0.06);
 
-    // 杆身前段木头共鸣：给"有力"的低频重量
-    mode(155 + p * 42, t, 0.085, 0.085 + hit * 0.13);
-    mode(315 + p * 85, t, 0.052, 0.045 + hit * 0.075);
-    mode(590 + p * 140, t, 0.030, 0.022 + hit * 0.040);
+    // 4) ball/cue high modes
+    const f0 = 2600 + p * 980 + (Math.random() - 0.5) * 160;
+    mode(f0, t, 0.014, 0.035 + hit * 0.14);
+    mode(f0 * 1.47, t, 0.009, 0.018 + hit * 0.075);
+    mode(f0 * 2.11, t, 0.006, 0.008 + hit * 0.040);
+    mode(6200 + p * 800, t, 0.004, 0.008 + hit * 0.022);
+
+    // 5) low body weight
+    mode(145 + p * 40, t, 0.080, 0.075 + hit * 0.14);
+    mode(300 + p * 80, t, 0.050, 0.040 + hit * 0.080);
+    mode(600 + p * 140, t, 0.028, 0.018 + hit * 0.040);
   }
 
   function sfxBall(vol, rate) {

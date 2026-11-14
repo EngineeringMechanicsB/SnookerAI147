@@ -346,6 +346,34 @@ body.pool-mode .hud-break { display:none; }
   overflow:hidden; text-overflow:ellipsis;
   transition:opacity 0.5s ease-out;
 }
+/* 三点规划：塞进 22px 状态行，不新增行高 */
+.planner-inline {
+  display:flex; align-items:center; gap:6px;
+  margin-left:auto; min-width:0; flex:1 1 auto;
+  overflow:hidden; white-space:nowrap;
+}
+.planner-inline[hidden] { display:none; }
+.plan-step { color:#ffd93d; font-size:10px; letter-spacing:0.5px; flex:0 0 auto; }
+.planner-inline b { color:#fff; font-size:11px; flex:0 0 auto; }
+.plan-hint {
+  color:rgba(255,255,255,0.5); font-size:10px; min-width:0;
+  overflow:hidden; text-overflow:ellipsis;
+}
+.plan-result {
+  color:#9ed8ff; font-size:10px; min-width:0;
+  overflow:hidden; text-overflow:ellipsis;
+}
+.plan-mini {
+  flex:0 0 auto; height:18px; padding:0 7px;
+  border-radius:var(--r-pill); border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.7);
+  font-size:9px; font-family:inherit; cursor:pointer;
+}
+.plan-mini:hover { background:rgba(255,255,255,0.14); color:#fff; }
+.plan-mini.primary {
+  background:rgba(255,217,61,0.16); border-color:rgba(255,217,61,0.4); color:#ffd93d;
+}
+.plan-mini[hidden] { display:none; }
 .status-main b { color:#eaeaea; font-weight:600; }
 .status-main .s-sub { color:#9a9a9a; font-size:12px; }
 .status-main .s-sub em { color:#ffd93d; font-style:normal; }
@@ -560,6 +588,80 @@ body.ui-hidden .game-wrap {
 /* 隐藏 UI 时台面槽位铺满整个视口，fitCanvases() 会重新按 16:9.2 等比适配 */
 body.ui-hidden .stage { position:fixed; inset:0; }
 body.ui-hidden .canvas-fit { border-radius:0; }
+
+/* 隐藏/恢复 UI 的过渡：台面始终铺满，HUD/控制条像 iOS 面板一样弹出去/弹回来 */
+body.ui-anim .game-wrap {
+  background:none; padding:0; box-shadow:none; border-radius:0;
+  width:100vw; height:100vh; display:block;
+}
+body.ui-anim .stage { position:fixed; inset:0; z-index:1; }
+body.ui-anim .canvas-fit { border-radius:0; }
+body.ui-anim .hud { position:fixed; top:0; left:0; right:0; z-index:50; }
+body.ui-anim .status-line { position:fixed; top:76px; left:0; right:0; z-index:50; }
+body.ui-anim .control-bar { position:fixed; bottom:0; left:0; right:0; z-index:50; }
+body.ui-anim .chatter-box { display:none; }
+body.ui-hiding .hud { animation:uiOutTop .62s cubic-bezier(.34,1.56,.64,1) forwards; }
+body.ui-hiding .status-line { animation:uiFadeOut .32s ease forwards; }
+body.ui-hiding .control-bar { animation:uiOutBottom .62s cubic-bezier(.34,1.56,.64,1) forwards; }
+body.ui-showing .hud { animation:uiInTop .62s cubic-bezier(.34,1.56,.64,1); }
+body.ui-showing .status-line { animation:uiFadeIn .36s ease; }
+body.ui-showing .control-bar { animation:uiInBottom .62s cubic-bezier(.34,1.56,.64,1); }
+@keyframes uiOutTop {
+  0% { transform:translateY(0); }
+  70% { transform:translateY(-104%); }
+  100% { transform:translateY(-100%); }
+}
+@keyframes uiInTop {
+  0% { transform:translateY(-100%); }
+  65% { transform:translateY(7px); }
+  100% { transform:translateY(0); }
+}
+@keyframes uiOutBottom {
+  0% { transform:translateY(0); }
+  70% { transform:translateY(104%); }
+  100% { transform:translateY(100%); }
+}
+@keyframes uiInBottom {
+  0% { transform:translateY(100%); }
+  65% { transform:translateY(-7px); }
+  100% { transform:translateY(0); }
+}
+@keyframes uiFadeOut { to { opacity:0; transform:translateY(-8px); } }
+@keyframes uiFadeIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:none; } }
+
+/* 隐藏后留下的上下拉手 */
+.ui-handle {
+  position:fixed; left:50%; transform:translateX(-50%);
+  z-index:60; display:none; align-items:center; justify-content:center;
+  width:72px; height:13px; padding:0; cursor:pointer;
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(12,16,22,0.72); backdrop-filter:blur(6px);
+  border-radius:0 0 9px 9px;
+  box-shadow:0 2px 10px rgba(0,0,0,0.35);
+}
+.ui-handle span {
+  width:34px; height:3px; border-radius:2px;
+  background:rgba(255,255,255,0.35);
+}
+.ui-handle:hover { background:rgba(28,34,44,0.9); }
+.ui-handle:hover span { background:rgba(255,217,61,0.75); }
+.ui-handle-top { top:0; }
+.ui-handle-bottom { bottom:0; border-radius:9px 9px 0 0; }
+body.ui-hidden .ui-handle {
+  display:flex;
+  animation:handleDrop .45s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes handleDrop {
+  0% { opacity:0; transform:translate(-50%, -12px); }
+  70% { opacity:1; transform:translate(-50%, 2px); }
+  100% { opacity:1; transform:translate(-50%, 0); }
+}
+body.ui-hidden .ui-handle-bottom { animation-name:handleRise; }
+@keyframes handleRise {
+  0% { opacity:0; transform:translate(-50%, 12px); }
+  70% { opacity:1; transform:translate(-50%, -2px); }
+  100% { opacity:1; transform:translate(-50%, 0); }
+}
 
 /* 观战 / 主动轨道视角：#gc 是镜头输入面，不是瞄球面 */
 body.spectating canvas#gc { cursor:grab; }

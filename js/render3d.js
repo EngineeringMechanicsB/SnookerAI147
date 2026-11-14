@@ -587,9 +587,9 @@
       }
       const arc = Math.PI * 1.12;              // 约 202°
       const geo = new THREE.TorusGeometry(p.r + 2.2, 1.15, 6, 26, arc);
-      // 金属箍要压在**靠库边的一侧**，不是台面内侧：
-      // 把弧段中心翻 180°，和上一版完全相反。
-      geo.rotateZ(centre + Math.PI - arc / 2);
+      // 铜箍弧段朝台面内侧，围绕袋口；旧版翻到库边外侧，会有一部分埋进木框、
+      // 另一部分露在台面上，看起来包不圆。
+      geo.rotateZ(centre - arc / 2);
       const ring = new THREE.Mesh(geo, goldMat);
       ring.rotation.x = Math.PI / 2;
       ring.position.set(X(p.x), RAIL_H + 0.5, Z(p.y));

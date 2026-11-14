@@ -118,8 +118,10 @@
   // （pockets[].r），球心一旦进到洞口边缘就应当落袋。旧值 16.4/19.4
   // 比画出来的洞还小，慢球经常停在洞口边缘，手感像"必须大力才能进"。
   // 只放宽 2px，不会回到老版本 51px"什么都进"的吸球感。
-  const MOUTH_CORNER = (IS_POOL_TABLE ? 114 : 86) * SCALE / 2 + (IS_POOL_TABLE ? 1.5 : 4);
-  const MOUTH_MIDDLE = (IS_POOL_TABLE ? 127 : 102) * SCALE / 2 + (IS_POOL_TABLE ? 1.5 : 4);
+  // 捕获圈只比真实袋口放宽 2.5px。旧值放宽 4px，慢球擦着袋口也会被"吸"进去。
+  // 收小后，球会更多地撞到袋口两侧的库边/袋角，偶尔弹两下再出来。
+  const MOUTH_CORNER = (IS_POOL_TABLE ? 114 : 86) * SCALE / 2 + (IS_POOL_TABLE ? 1.5 : 2.5);
+  const MOUTH_MIDDLE = (IS_POOL_TABLE ? 127 : 102) * SCALE / 2 + (IS_POOL_TABLE ? 1.5 : 2.5);
 
   // 落袋规则：**球心进入袋口的捕获圈即落袋**。
   // 角袋捕获圆心 = 台面角点，半径 = 半袋宽。

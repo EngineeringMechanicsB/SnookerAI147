@@ -99,6 +99,16 @@
   <div class="status-line" id="statusLine">
     <span class="status-main" id="statusMain"></span>
     <span class="status-prev" id="statusPrev"></span>
+    <!-- 三点规划：塞进已有状态行，不新增行高，也不压台面 -->
+    <span class="planner-inline" id="plannerHud" hidden>
+      <span class="plan-step" id="planStep"></span>
+      <b id="planTitle"></b>
+      <span class="plan-hint" id="planHint"></span>
+      <span class="plan-result" id="planResult"></span>
+      <button class="plan-mini primary" id="planApply" hidden>Apply</button>
+      <button class="plan-mini" id="planClear">Clear</button>
+      <button class="plan-mini" id="planExit">Exit</button>
+    </span>
   </div>
 
   <!-- 台面：两层画布装在同一个 .canvas-fit 里，由 JS 按可用空间等比缩放。
@@ -135,21 +145,6 @@
         <button class="tut-mini" id="tutExitBtn">Exit</button>
       </div>
       <div class="tut-coach-line" id="tutCoachLine"></div>
-    </div>
-
-    <!-- 三点规划：放在控制条内，不压台面 -->
-    <div class="tutorial-hud planner-hud" id="plannerHud" hidden>
-      <div class="tut-hud-text">
-        <span class="tut-step" id="planStep"></span>
-        <b id="planTitle"></b>
-        <span class="tut-goal" id="planHint"></span>
-      </div>
-      <div class="tut-hud-actions">
-        <button class="tut-mini primary" id="planApply" hidden>Apply</button>
-        <button class="tut-mini" id="planClear">Clear</button>
-        <button class="tut-mini" id="planExit">Exit</button>
-      </div>
-      <div class="tut-coach-line" id="planResult"></div>
     </div>
 
     <!-- 加塞控制盘：内圈 = 击点，外圈下半圆 = 球杆俯仰 -->
@@ -296,6 +291,14 @@
       </div>
     </div>
   </div>
+
+  <!-- 隐藏 UI 后留下的上下小拉手：点一下恢复菜单 -->
+  <button class="ui-handle ui-handle-top" id="uiHandleTop" title="Show UI">
+    <span></span>
+  </button>
+  <button class="ui-handle ui-handle-bottom" id="uiHandleBottom" title="Show UI">
+    <span></span>
+  </button>
 
 </div><!-- /game-wrap -->
 
