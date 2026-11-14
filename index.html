@@ -137,6 +137,21 @@
       <div class="tut-coach-line" id="tutCoachLine"></div>
     </div>
 
+    <!-- 三点规划：放在控制条内，不压台面 -->
+    <div class="tutorial-hud planner-hud" id="plannerHud" hidden>
+      <div class="tut-hud-text">
+        <span class="tut-step" id="planStep"></span>
+        <b id="planTitle"></b>
+        <span class="tut-goal" id="planHint"></span>
+      </div>
+      <div class="tut-hud-actions">
+        <button class="tut-mini primary" id="planApply" hidden>Apply</button>
+        <button class="tut-mini" id="planClear">Clear</button>
+        <button class="tut-mini" id="planExit">Exit</button>
+      </div>
+      <div class="tut-coach-line" id="planResult"></div>
+    </div>
+
     <!-- 加塞控制盘：内圈 = 击点，外圈下半圆 = 球杆俯仰 -->
     <div class="spin-wrap">
       <canvas id="spinPad" width="220" height="220"></canvas>
@@ -178,6 +193,7 @@
 
     <div class="think-label" id="thinkLabel"></div>
 
+    <button class="restart-btn" id="plannerBtn" title="Plan three points: first contact, object target, cue-ball target">Planner</button>
     <button class="restart-btn" id="tutorialBtn" title="Learn aim, spin, follow, draw and the rules">Tutorial</button>
 
     <!-- 存档子菜单：所有保存/载入/备份入口都收在这里，控制条不再变长。
@@ -250,6 +266,19 @@
     </div>
   </div>
 
+  <!-- 斯诺克规则：犯规后，对手可选择自己打或让对方从原位重解 -->
+  <div class="tutorial-overlay" id="replayOverlay" hidden>
+    <div class="tutorial-result">
+      <div class="tut-result-mark">&#8635;</div>
+      <h3 id="replayTitle"></h3>
+      <p id="replayText"></p>
+      <div class="tut-result-actions">
+        <button class="restart-btn" id="replayPlay"></button>
+        <button class="restart-btn primary" id="replayAgain"></button>
+      </div>
+    </div>
+  </div>
+
   <!-- 教练笔记：完整的目标 / 动作 / 白球线路 / 常见错误 -->
   <div class="tutorial-overlay" id="tutorialCoach" hidden>
     <div class="tutorial-panel tut-coach-panel">
@@ -276,6 +305,7 @@
 <script src="js/physics.js"></script>
 <script src="js/rules.js"></script>
 <script src="js/sim.js"></script>
+<script src="js/planner.js"></script>
 <script src="js/ai.js"></script>
 <script src="js/ai-pool.js"></script>
 <script src="js/render.js"></script>

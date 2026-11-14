@@ -83,12 +83,19 @@
     summaryOverlay: $('summaryOverlay'), sumTitle: $('sumTitle'), sumScore: $('sumScore'),
     sumNameA: $('sumNameA'), sumNameB: $('sumNameB'), sumBody: $('sumBody'),
     sumRematch: $('sumRematch'), sumClose: $('sumClose'), sumHint: $('sumHint'),
+    // 规划
+    plannerBtn: $('plannerBtn'), plannerHud: $('plannerHud'),
+    planStep: $('planStep'), planTitle: $('planTitle'), planHint: $('planHint'),
+    planResult: $('planResult'), planApply: $('planApply'),
+    planClear: $('planClear'), planExit: $('planExit'),
     // 教学
     tutorialBtn: $('tutorialBtn'),
     tutorialHud: $('tutorialHud'), tutStep: $('tutStep'), tutName: $('tutName'), tutGoal: $('tutGoal'),
     tutDemo: $('tutDemo'), tutCoach: $('tutCoach'), tutCoachLine: $('tutCoachLine'),
     tutRetry: $('tutRetry'), tutMenuBtn: $('tutMenuBtn'), tutExitBtn: $('tutExitBtn'),
     tutorialCoach: $('tutorialCoach'), tutCoachKicker: $('tutCoachKicker'), tutCoachTitle: $('tutCoachTitle'),
+    replayOverlay: $('replayOverlay'), replayTitle: $('replayTitle'), replayText: $('replayText'),
+    replayPlay: $('replayPlay'), replayAgain: $('replayAgain'),
     tutCoachBody: $('tutCoachBody'), tutCoachClose: $('tutCoachClose'),
     tutCoachDemo: $('tutCoachDemo'), tutCoachOk: $('tutCoachOk'),
     tutorialOverlay: $('tutorialOverlay'), tutorialGrid: $('tutorialGrid'),
@@ -169,6 +176,11 @@
     cueClear: null,       // 后斯诺克：本杆可击球面（cueclear.js 的 analyze 结果）
     cueBlockNotice: '',   // 本回合已提示过"球杆被挡"的去重键
     tutorial: null,       // 教学模式：{id, stepIndex, waiting, zone} 或 null
+    preShot: null,        // 出杆前的球位快照（用于"让对方重解"）
+    preShotSnookered: false,
+    replayCandidate: null,// 犯规后等待人类对手决定是否让对方重解
+    replayPromptOpen: false,
+    plan: null,           // 规划模式：{stage,targetIndex,objPoint,cuePoint,solution,busy}
     guideMode: 2,         // 辅助线：0 全无 / 1 只有母球 / 2 母球+第一颗 / 3 所有动的球
     stroke: null,         // 出杆动画快照：{angle,power,spinX,spinY,pitchDeg,t,pull,fired}
     needRed: true,
@@ -781,6 +793,7 @@
 
   function openTutorialMenu() {
     if (!C.tutorial) return;
+    if (G.plan) exitPlanner();
     clearTimeout(tutorialNextTimer);
     if (C.TABLE_MODE !== 'snooker') {
       location.href = location.pathname + '?mode=classic&tutorial=1';
@@ -815,6 +828,7 @@
 
   function startTutorial(id, stepIndex) {
     if (!C.tutorial) return;
+    if (G.plan) exitPlanner();
     if (C.TABLE_MODE !== 'snooker') {
       location.href = location.pathname + '?mode=classic&tutorial=1';
       return;
@@ -1077,6 +1091,222 @@
   }
 
   // ================================================================
+  //  三点规划：先撞谁 → 目标球去哪 → 白球停哪
+  // ================================================================
+  function plannerSpinText(shot) {
+    return tr(RENDER.spinText(shot.spinX || 0, shot.spinY || 0));
+  }
+
+  function updatePlannerHud() {
+    if (!dom.plannerHud) return;
+    const p = G.plan;
+    if (!p) {
+      dom.plannerHud.hidden = true;
+      return;
+    }
+    dom.plannerHud.hidden = false;
+    dom.planTitle.textContent = t('plan.title');
+    const stage = p.stage;
+    dom.planStep.textContent = t(stage === 0 ? 'plan.step0' : stage === 1 ? 'plan.step1' : stage === 2 ? 'plan.step2' : 'plan.step3');
+    dom.planHint.textContent = t(stage === 0 ? 'plan.hint0' : stage === 1 ? 'plan.hint1' : stage === 2 ? 'plan.hint2' : 'plan.hint3');
+    dom.planApply.textContent = t('plan.apply');
+    dom.planClear.textContent = t('plan.clear');
+    dom.planExit.textContent = t('plan.exit');
+    dom.planApply.hidden = !p.solution;
+    if (p.busy) {
+      dom.planResult.textContent = t('plan.solving');
+    } else if (p.solution && p.solution.ok) {
+      dom.planResult.textContent = t('plan.result', {
+        pct: Math.round(p.solution.shot.power / C.MAX_POWER * 100),
+        spin: plannerSpinText(p.solution.shot),
+        obj: Math.round(p.solution.objErr),
+        cue: Math.round(p.solution.cueErr),
+      });
+    } else if (p.error) {
+      dom.planResult.textContent = t('plan.no', { error: p.error });
+    } else {
+      dom.planResult.textContent = '';
+    }
+  }
+
+  function startPlanner() {
+    if (!C.planner) return;
+    if (G.tutorial) {
+      showMsg(t('plan.title'), t('plan.noTutorial'), 1800);
+      return;
+    }
+    if (!humanTurn() || G.state !== 'aim' || !G.cueBall || !G.cueBall.isOnTable()) {
+      showMsg(t('plan.title'), t('plan.needAim'), 1800);
+      return;
+    }
+    if (use3d) toggle3d();
+    G.plan = {
+      stage: 0, targetIndex: -1,
+      objPoint: null, cuePoint: null,
+      solution: null, busy: false, error: '',
+    };
+    G.aimLocked = false;
+    document.body.classList.remove('aim-locked');
+    updatePlannerHud();
+    showMsg(t('plan.title'), t('plan.enter'), 3200);
+  }
+
+  function exitPlanner() {
+    G.plan = null;
+    updatePlannerHud();
+  }
+
+  function clearPlanner() {
+    if (!G.plan) return;
+    G.plan.stage = 0;
+    G.plan.targetIndex = -1;
+    G.plan.objPoint = null;
+    G.plan.cuePoint = null;
+    G.plan.solution = null;
+    G.plan.busy = false;
+    G.plan.error = '';
+    updatePlannerHud();
+  }
+
+  function plannerPickBall(x, y) {
+    let best = -1, bestD = C.BALL_R * 1.7;
+    for (let i = 0; i < G.balls.length; i++) {
+      const b = G.balls[i];
+      if (!b.isOnTable() || b === G.cueBall) continue;
+      const d = Math.hypot(b.x - x, b.y - y);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  }
+
+  function handlePlannerClick(x, y) {
+    const p = G.plan;
+    if (!p || p.busy) return;
+    if (p.stage === 0) {
+      const idx = plannerPickBall(x, y);
+      if (idx < 0) {
+        showMsg(t('plan.title'), t('plan.badBall'), 1200);
+        return;
+      }
+      p.targetIndex = idx;
+      p.stage = 1;
+      updatePlannerHud();
+      return;
+    }
+    if (p.stage === 1) {
+      p.objPoint = { x: x, y: y };
+      p.stage = 2;
+      updatePlannerHud();
+      return;
+    }
+    if (p.stage === 2) {
+      p.cuePoint = { x: x, y: y };
+      p.stage = 3;
+      solvePlanner();
+    }
+  }
+
+  function solvePlanner() {
+    const p = G.plan;
+    if (!p || p.targetIndex < 0 || !p.objPoint || !p.cuePoint) return;
+    p.busy = true;
+    p.solution = null;
+    p.error = '';
+    updatePlannerHud();
+    const snapshot = {
+      plan: p,
+      targetIndex: p.targetIndex,
+      objPoint: p.objPoint,
+      cuePoint: p.cuePoint,
+      data: G.balls.map(b => ({
+        label: b.label, x: b.x, y: b.y,
+        active: b.active !== false, potted: !!b.potted,
+      })),
+    };
+    setTimeout(() => {
+      if (G.plan !== snapshot.plan) return;
+      let res;
+      try {
+        res = C.planner.solve(snapshot.data, snapshot.targetIndex, snapshot.objPoint, snapshot.cuePoint);
+      } catch (e) {
+        res = { ok: false, error: String(e && e.message || e) };
+      }
+      if (G.plan !== snapshot.plan) return;
+      G.plan.busy = false;
+      if (res && res.ok) G.plan.solution = res;
+      else G.plan.error = (res && res.error) || 'unknown';
+      updatePlannerHud();
+    }, 60);
+  }
+
+  function applyPlannerSolution() {
+    const p = G.plan;
+    if (!p || !p.solution || !p.solution.ok) return;
+    const s = p.solution;
+    G.aimAngle = s.shot.angle;
+    G.power = s.shot.power;
+    G.spinX = s.shot.spinX || 0;
+    G.spinY = s.shot.spinY || 0;
+    G.pitchDeg = 0;
+    G.guideMode = 3;
+    if (dom.guideSelect) dom.guideSelect.value = '3';
+    const pct = Math.round(G.power / C.MAX_POWER * 100);
+    const spin = plannerSpinText(s.shot);
+    exitPlanner();
+    updatePowerDisplay();
+    updateHUD();
+    renderSpinPad();
+    showMsg(t('plan.title'), t('plan.applied', { pct: pct, spin: spin }), 3200);
+  }
+
+  function drawPlanOverlay(ctx) {
+    const p = G.plan;
+    if (!p) return;
+    ctx.save();
+    ctx.lineWidth = 2;
+    if (p.targetIndex >= 0 && G.balls[p.targetIndex]) {
+      const tgt = G.balls[p.targetIndex];
+      ctx.strokeStyle = 'rgba(255,217,61,0.9)';
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ctx.arc(tgt.x, tgt.y, C.BALL_R + 6, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    const mark = (pt, color, label) => {
+      if (!pt) return;
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color.replace('0.9', '0.12');
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, 20, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = color;
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(label, pt.x, pt.y);
+    };
+    mark(p.objPoint, 'rgba(255,107,125,0.9)', '2');
+    mark(p.cuePoint, 'rgba(110,210,255,0.9)', '3');
+    if (p.solution && p.solution.ok) {
+      const line = (path, color) => {
+        if (!path || path.length < 2) return;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([7, 5]);
+        ctx.beginPath();
+        ctx.moveTo(path[0].x, path[0].y);
+        for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+        ctx.stroke();
+      };
+      line(p.solution.cuePath, 'rgba(110,210,255,0.85)');
+      line(p.solution.targetPath, 'rgba(255,217,61,0.85)');
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+
+  // ================================================================
   //  开局 / 复位
   // ================================================================
   function initBalls() {
@@ -1182,6 +1412,13 @@
       G.paused = false;
       updatePauseBtn();
     }
+    G.preShot = null;
+    G.preShotSnookered = false;
+    G.replayCandidate = null;
+    G.replayPromptOpen = false;
+    G.plan = null;
+    if (dom.replayOverlay) dom.replayOverlay.hidden = true;
+    if (dom.plannerHud) dom.plannerHud.hidden = true;
     G.scores = [0, 0];
     G.breaks = [0, 0];
     G.currentPlayer = 0;
@@ -1272,6 +1509,7 @@
   // 现在出杆是**独立动作**：鼠标只负责方向，力度和塞由各自控件调，
   // 真正击球要点 "Shoot" 按钮或按空格。
   function canShoot() {
+    if (G.replayPromptOpen || G.plan) return false;
     if (G.tutorial && G.tutorial.waiting) return false;
     return humanTurn() && G.state === 'aim' && G.cueBall && G.cueBall.isOnTable();
   }
@@ -1282,6 +1520,7 @@
   const STROKE_HIT_MS = 90;
 
   function shoot() {
+    if (G.replayPromptOpen || G.plan) return;
     if (G.tutorial && G.tutorial.waiting) return;
     if (G.state !== 'aim' && G.state !== 'powering' && G.state !== 'dragging') return;
     if (!G.cueBall || !G.cueBall.isOnTable()) return;
@@ -1306,6 +1545,10 @@
     G.shotStartCue = { x: G.cueBall.x, y: G.cueBall.y };
     G.opening = false;                   // 第一杆已经出杆，后面的 AI 不再走开球逻辑
     G.cueInHand = false;
+
+    // 这一杆之前的完整球位：犯规后对手可以要求"从原位重解"。
+    G.preShot = snapshotPreShot();
+    G.preShotSnookered = isSnookered();
 
     // 快照本杆参数。真正发力在动画结束时，改这些值也不会影响已经出杆的这一杆。
     G.stroke = {
@@ -1347,6 +1590,140 @@
     G.stroke = null;
     G.state = 'moving';
     updateHUD();
+  }
+
+  // 出杆前的球位快照：只存规则相关状态，不存动画/计时器。
+  function snapshotPreShot() {
+    return {
+      balls: G.balls.map(b => ({
+        label: b.label, x: b.x, y: b.y,
+        active: b.active !== false, potted: !!b.potted,
+      })),
+      needRed: !!G.needRed,
+      pottedRedThisTurn: !!G.pottedRedThisTurn,
+      isRespottedBlack: !!G.isRespottedBlack,
+      cueInHand: !!G.cueInHand,
+      opening: !!G.opening,
+      aimAngle: G.aimAngle,
+      power: G.power,
+      spinX: G.spinX, spinY: G.spinY, pitchDeg: G.pitchDeg,
+    };
+  }
+
+  function restorePreShot(snap) {
+    if (!snap) return false;
+    G.balls = [];
+    for (const s of snap.balls) {
+      const b = new C.Ball(s.x, s.y, s.label);
+      b.active = s.active !== false;
+      b.potted = !!s.potted;
+      b.px = b.x; b.py = b.y;
+      G.balls.push(b);
+    }
+    G.cueBall = G.balls.find(b => b.label === 'white') || null;
+    if (!G.cueBall) return false;
+    G.needRed = !!snap.needRed;
+    G.pottedRedThisTurn = !!snap.pottedRedThisTurn;
+    G.isRespottedBlack = !!snap.isRespottedBlack;
+    G.cueInHand = !!snap.cueInHand;
+    G.opening = !!snap.opening;
+    G.aimAngle = Number.isFinite(snap.aimAngle) ? snap.aimAngle : 0;
+    G.power = Number.isFinite(snap.power) ? snap.power : 14;
+    G.spinX = Number.isFinite(snap.spinX) ? snap.spinX : 0;
+    G.spinY = Number.isFinite(snap.spinY) ? snap.spinY : 0;
+    G.pitchDeg = Number.isFinite(snap.pitchDeg) ? snap.pitchDeg : 0;
+    return true;
+  }
+
+  function aiWantsReplay(incoming, offender) {
+    const p = G.players[incoming];
+    if (!p || p.type !== 'ai') return false;
+    const level = p.level || 'master';
+    const prob = level === 'master' ? 0.9 : level === 'hard' ? 0.7 :
+      level === 'medium' ? 0.45 : 0.2;
+    return Math.random() < prob;
+  }
+
+  // 让犯规方从"出杆前"的同一球位重解。罚分已经记给对手；这里只还原球位。
+  function replayTurn(offender, afterSwitch) {
+    const snap = G.preShot;
+    if (!snap || !restorePreShot(snap)) return false;
+    if (afterSwitch) {
+      // 人类对手的提示是在 switchPlayer 之后弹的：撤销刚开给接球方的访问，
+      // 否则统计里会多记一次他们没打过的上手。
+      const incoming = 1 - offender;
+      endVisit(incoming);
+      if (G.stats && G.stats[incoming]) {
+        G.stats[incoming].visits = Math.max(0, G.stats[incoming].visits - 1);
+      }
+    }
+    G.currentPlayer = offender;
+    G.state = 'aim';
+    G.breaks[offender] = 0;
+    G.breakMilestone = 0;
+    G.maxOnNoticed = false;
+    G.negativeStreak = 0;
+    G.negativeNotice = 0;
+    G.pendingKind = '';
+    G.aiThinking = false;
+    G.aiToken++;
+    G.stroke = null;
+    G.cueClear = null;
+    G.cueBlockNotice = '';
+    G.trail = [];
+    G.trailTime = 0;
+    G.shotStartCue = null;
+    G.ballsVersion++;
+    G.preShot = null;
+    G.preShotSnookered = false;
+    G.replayCandidate = null;
+    G.replayPromptOpen = false;
+    if (dom.replayOverlay) dom.replayOverlay.hidden = true;
+    live.potted = []; live.firstContact = null; live.firstContactBall = null;
+    live.pottedByLabel = {}; live.kind = ''; live.onLabel = null;
+    endVisit(offender);
+    beginVisit(offender);
+    updatePowerDisplay();
+    updateHUD();
+    updateBallCount();
+    autoSaveGame();
+    showMsg(t('replay.title'), t('replay.playing', { offender: seatName(G.players[offender]) }), 3200);
+    maybeScheduleAI();
+    return true;
+  }
+
+  function showReplayPrompt() {
+    const c = G.replayCandidate;
+    if (!c) return;
+    G.replayPromptOpen = true;
+    const offender = c.offender;
+    if (dom.replayTitle) dom.replayTitle.textContent = t('replay.title');
+    if (dom.replayText) {
+      dom.replayText.textContent = t('replay.text', {
+        offender: seatName(G.players[offender]),
+      });
+    }
+    if (dom.replayPlay) dom.replayPlay.textContent = t('replay.play');
+    if (dom.replayAgain) dom.replayAgain.textContent = t('replay.again');
+    if (dom.replayOverlay) dom.replayOverlay.hidden = false;
+    updateHUD();
+  }
+
+  function declineReplay() {
+    G.replayPromptOpen = false;
+    G.replayCandidate = null;
+    G.preShot = null;
+    G.preShotSnookered = false;
+    if (dom.replayOverlay) dom.replayOverlay.hidden = true;
+    updateHUD();
+  }
+
+  function acceptReplayPrompt() {
+    const c = G.replayCandidate;
+    G.replayPromptOpen = false;
+    if (dom.replayOverlay) dom.replayOverlay.hidden = true;
+    if (!c) return;
+    replayTurn(c.offender, true);
   }
 
   function trailColor(b) {
@@ -1573,6 +1950,30 @@
     recordShot(verdict);
     chatterAfterShot(verdict, p);
 
+    // ---- 斯诺克规则：对手可以让犯规方从原位重解 ----
+    // 只在"这一杆开始前确实被斯诺克、这一杆犯规"时提供。
+    const replayPossible = !pool && G.gameMode === 'classic' && !G.isRespottedBlack &&
+      verdict.penalty > 0 && G.preShotSnookered && G.preShot &&
+      !verdict.gameOver && !verdict.tie;
+    if (replayPossible) {
+      const incoming = 1 - p;
+      if (G.players[incoming].type === 'ai') {
+        if (aiWantsReplay(incoming, p)) {
+          showMsg(t('replay.title'), t('replay.asked', {
+            incoming: seatName(G.players[incoming]),
+            offender: seatName(G.players[p]),
+          }), 2800);
+          replayTurn(p, false);
+          return;
+        }
+      } else {
+        G.replayCandidate = { offender: p };
+      }
+    } else {
+      G.preShot = null;
+      G.preShotSnookered = false;
+    }
+
     // ---- 彩球复位 ----
     // 规则 7(f)：多颗彩球同时复位时，分值高的先放。
     // C.respotColor 会处理"自己的点位被白球/别的球占住"的情况：
@@ -1652,6 +2053,8 @@
 
     // ---- 终局 ----
     if (verdict.gameOver) {
+      G.preShot = null;
+      G.preShotSnookered = false;
       G.state = 'over';
       G.aiThinking = false;
       endVisit(p);
@@ -1680,6 +2083,8 @@
       return;
     }
     if (verdict.tie) {
+      G.preShot = null;
+      G.preShotSnookered = false;
       endVisit(p);
       startRespottedBlack();
       return;
@@ -1698,6 +2103,8 @@
 
     if (verdict.turnContinues) {
       G.state = 'aim';
+      G.preShot = null;
+      G.preShotSnookered = false;
       resetAimToDefault();
       updateHUD();
       autoSaveGame();
@@ -1706,6 +2113,8 @@
     }
 
     switchPlayer(verdict.cueBallInHand);
+    if (G.replayCandidate) showReplayPrompt();
+    else { G.preShot = null; G.preShotSnookered = false; }
   }
 
   function switchPlayer(inHand) {
@@ -1984,6 +2393,7 @@
     }
 
     RENDER.drawBalls(ctx, G.balls, G.cueBall, effSpin.sx, effSpin.sy, G.aimAngle, effSpin.pitchDeg);
+    if (G.plan) drawPlanOverlay(ctx);
 
     // 上一杆轨迹回放：停杆后 1.6 秒内淡出
     if (G.trailTime && G.trail.length && G.state !== 'moving') {
@@ -2235,6 +2645,7 @@
   canvas.addEventListener('mousemove', e => {
     const p = cpos(e);
     G.mx = p.x; G.my = p.y;
+    if (G.plan) return;
     // 轨道视角下鼠标优先属于镜头，但**人类回合仍然可以瞄准**：
     // 透视机不能用屏幕坐标直接当台面坐标，改由 R3D.pickTable() 射线求交。
     // 按住拖拽时 pointermove 在转镜头，这里不抢 —— 松手后悬停即可继续瞄。
@@ -2266,6 +2677,12 @@
 
   canvas.addEventListener('mousedown', e => {
     if (orbitEnabled()) return;
+    if (G.plan) {
+      if (e.button !== 0) return;
+      const q = cpos(e); G.mx = q.x; G.my = q.y;
+      handlePlannerClick(q.x, q.y);
+      return;
+    }
     if (e.button !== 0 || !humanTurn()) return;
     // 瞄准中：点台面 = 锁定 / 解锁（切换），不出杆。出杆只认空格和 Shoot 按钮，
     // 免得"想定住方向"的那一下把球打出去。
@@ -2303,6 +2720,7 @@
   // 而 orbitEnabled() 要求 spectate()，所以两边不会同时命中。
   canvas.addEventListener('wheel', e => {
     if (orbitEnabled()) return;          // 轨道视角的滚轮是缩放镜头
+    if (G.plan) return;
     if (!humanTurn() || G.state !== 'aim' || !G.cueBall.isOnTable()) return;
     e.preventDefault();                       // 别让页面跟着滚
     const step = e.shiftKey ? 0.0002 : 0.0008;
@@ -2317,8 +2735,10 @@
 
   canvas.addEventListener('touchstart', e => {
     e.preventDefault();
-    if (orbitEnabled() || !humanTurn()) return;
+    if (orbitEnabled()) return;
     const p = cpos(e); G.mx = p.x; G.my = p.y;
+    if (G.plan) { handlePlannerClick(p.x, p.y); return; }
+    if (!humanTurn()) return;
     if (G.state === 'aim' && G.cueBall.isOnTable()) {
       if (G.aimLocked) { touchAimed = false; setAimLock(false); return; }
       touchAimed = true;
@@ -2344,8 +2764,10 @@
 
   canvas.addEventListener('touchmove', e => {
     e.preventDefault();
-    if (orbitEnabled() || !humanTurn()) return;
+    if (orbitEnabled()) return;
     const p = cpos(e); G.mx = p.x; G.my = p.y;
+    if (G.plan) return;
+    if (!humanTurn()) return;
     if (G.state === 'aim' && G.cueBall.isOnTable() && !G.aimLocked) aimAt(G.mx, G.my);
     else if (G.state === 'placing' && G.cueBall.isOnTable() && G.draggingCueBall) {
       const dx = G.mx - C.BAULK_X, dy = G.my - C.CY2;
@@ -3094,6 +3516,10 @@
   }
 
   function toggle3d() {
+    if (G.plan && !use3d) {
+      showMsg(t('plan.title'), t('plan.only2d'), 1600);
+      return;
+    }
     if (!canvas3d || !R3D || !R3D.available()) {
       showMsg('3D unavailable', 'three.js not found, or this browser has no WebGL', 2600);
       return;
@@ -3155,6 +3581,12 @@
     closeTutorialCoach();
     runTutorialDemo();
   });
+  if (dom.replayPlay) dom.replayPlay.addEventListener('click', declineReplay);
+  if (dom.replayAgain) dom.replayAgain.addEventListener('click', acceptReplayPrompt);
+  if (dom.plannerBtn) dom.plannerBtn.addEventListener('click', startPlanner);
+  if (dom.planApply) dom.planApply.addEventListener('click', applyPlannerSolution);
+  if (dom.planClear) dom.planClear.addEventListener('click', clearPlanner);
+  if (dom.planExit) dom.planExit.addEventListener('click', exitPlanner);
   if (dom.tutDemo) dom.tutDemo.addEventListener('click', runTutorialDemo);
   if (dom.tutRetry) dom.tutRetry.addEventListener('click', retryTutorialStep);
   if (dom.tutMenuBtn) dom.tutMenuBtn.addEventListener('click', openTutorialMenu);
@@ -3350,6 +3782,9 @@
     if (dom.sumRematch) dom.sumRematch.textContent = t('summary.rematch');
     if (dom.sumClose) dom.sumClose.textContent = t('summary.close');
     if (dom.tutorialBtn) dom.tutorialBtn.textContent = t('ui.tutorial');
+    if (dom.plannerBtn) dom.plannerBtn.textContent = t('ui.planner');
+    if (G.plan) updatePlannerHud();
+    if (G.replayPromptOpen) showReplayPrompt();
     if (dom.tutorialOverlay && !dom.tutorialOverlay.hidden) renderTutorialGrid();
     if (dom.tutorialCoach && !dom.tutorialCoach.hidden) renderTutorialCoach();
     updateTutorialHud();
