@@ -573,27 +573,34 @@
     sight(sxL - railMid, szT + (szB - szT) * 0.5);
     sight(sxR + railMid, szT + (szB - szT) * 0.5);
 
-    // 袋口铜圈：只保留靠库边/台面内的那一段，不画完整圆环。
-    // 中间袋朝台面内 (+Z / -Z)，角袋朝对角；约 200° 的铜箍。
+    // 袋口铜条：沿桌边/库边，在袋口两侧各压一段，像真实球台的铜包角。
+    // 不是围着袋心画圆环 —— 旧做法会一半埋进木框、一半露在台面上。
+    const stripH = 1.4, stripW = 6.4, stripLen = 32;
+    const stripY = RAIL_H + 0.9;
     for (const p of C.pockets) {
-      const isMiddle = Math.abs(p.x - cx) < 2;
-      let centre;
-      if (isMiddle) {
-        centre = p.y < C.T + 1 ? Math.PI / 2 : -Math.PI / 2;
-      } else {
-        const sx = p.x < cx ? 1 : -1;          // 朝台内
-        const sy = p.y < C.T + 1 ? 1 : -1;
-        centre = Math.atan2(sy, sx);
+      const hw = Math.sqrt(Math.max(0, p.mouth * p.mouth - C.BALL_R * C.BALL_R));
+      const atTop = p.y < C.T + 1;
+      const atBottom = p.y > C.B - 1;
+      const atLeft = p.x < C.L + 1;
+      const atRight = p.x > C.R - 1;
+      if (atTop || atBottom) {
+        const z = atTop ? Z(C.T) - 1.8 : Z(C.B) + 1.8;
+        for (const side of [-1, 1]) {
+          const bx = X(p.x) + side * (hw + stripLen / 2);
+          const m = new THREE.Mesh(new THREE.BoxGeometry(stripLen, stripH, stripW), goldMat);
+          m.position.set(bx, stripY, z);
+          scene.add(m);
+        }
       }
-      const arc = Math.PI * 1.12;              // 约 202°
-      const geo = new THREE.TorusGeometry(p.r + 2.2, 1.15, 6, 26, arc);
-      // 铜箍弧段朝台面内侧，围绕袋口；旧版翻到库边外侧，会有一部分埋进木框、
-      // 另一部分露在台面上，看起来包不圆。
-      geo.rotateZ(centre - arc / 2);
-      const ring = new THREE.Mesh(geo, goldMat);
-      ring.rotation.x = Math.PI / 2;
-      ring.position.set(X(p.x), RAIL_H + 0.5, Z(p.y));
-      scene.add(ring);
+      if (atLeft || atRight) {
+        const x = atLeft ? X(C.L) - 1.8 : X(C.R) + 1.8;
+        for (const side of [-1, 1]) {
+          const bz = Z(p.y) + side * (hw + stripLen / 2);
+          const m = new THREE.Mesh(new THREE.BoxGeometry(stripW, stripH, stripLen), goldMat);
+          m.position.set(x, stripY, bz);
+          scene.add(m);
+        }
+      }
     }
 
     // 长边铜牌：深色底 + 金色字（canvas 纹理，不引外部图片）
@@ -1109,9 +1116,9 @@
     // ---- 窗（氛围的入口，见 buildWindow）----
     buildWindow();
 
-    // ---- 三盏吊灯：沿长轴均布 ----
+    // ---- 三盏吊灯：沿长轴均布；中间那盏额外投一张软阴影 ----
     for (const k of [-1, 0, 1]) {
-      buildLamp(k * W / 3, k * 40);
+      buildLamp(k * W / 3, k * 40, k === 0);
     }
 
     // ---- 空气灰尘：台球厅射灯下的浮尘 ----
@@ -2363,7 +2370,7 @@
   //   所以：能藏的网格放内层 vis，灯（和它的 target）留在外层 g 上，永不可见性无关。
   //   藏 vis 同时消掉 shade.castShadow 投出的那道影子 —— 阴影贴图那一趟走的是同一个
   //   projectObject，visible === false 的物体连阴影都不参与。
-  function buildLamp(cx, cz) {
+  function buildLamp(cx, cz, shadowCaster) {
     const shadeY = 620;                    // 灯罩离台呢的高度（≈1630mm）
     const g = new THREE.Group();
     g.position.set(cx, 0, cz);             // cx/cz 已经是 three 世界的坐标
@@ -2412,6 +2419,18 @@
     lampSway.push({ g: g, phase: Math.random() * Math.PI * 2 });
     lamp.position.set(0, shadeY - 30, 0);
     lamp.target.position.set(0, -shadeY, 0);
+    if (shadowCaster) {
+      // 只有中间这盏投软阴影：三盏都开会让阴影 pass 翻三倍。
+      // 灯一摇，球的第二层影子也跟着轻轻移动。
+      lamp.castShadow = true;
+      lamp.shadow.mapSize.width = 512;
+      lamp.shadow.mapSize.height = 512;
+      lamp.shadow.camera.near = 40;
+      lamp.shadow.camera.far = 1800;
+      lamp.shadow.bias = -0.0015;
+      lamp.shadow.normalBias = 0.8;
+      lamp.shadow.radius = 2;
+    }
     g.add(lamp);
     g.add(lamp.target);
 
@@ -3160,8 +3179,11 @@
 
     for (let i = 0; i < lampSway.length; i++) {
       const s = lampSway[i];
-      s.g.rotation.z = Math.sin(t * 0.46 + s.phase) * 0.009;
-      s.g.rotation.x = Math.cos(t * 0.37 + s.phase * 1.7) * 0.006;
+      // 基础轻摆 + 偶尔一阵稍大的风。阵风用慢正弦的四次方，峰值稀疏，
+      // 最大约 1.1°，不会晃到影响瞄准。
+      const gust = Math.pow(Math.max(0, Math.sin(t * 0.18 + s.phase * 0.6)), 4);
+      s.g.rotation.z = Math.sin(t * 0.46 + s.phase) * (0.009 + gust * 0.011);
+      s.g.rotation.x = Math.cos(t * 0.37 + s.phase * 1.7) * (0.006 + gust * 0.008);
     }
 
     for (let i = 0; i < lampLights.length; i++) {
