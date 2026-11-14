@@ -573,34 +573,27 @@
     sight(sxL - railMid, szT + (szB - szT) * 0.5);
     sight(sxR + railMid, szT + (szB - szT) * 0.5);
 
-    // 袋口铜条：沿桌边/库边，在袋口两侧各压一段，像真实球台的铜包角。
-    // 不是围着袋心画圆环 —— 旧做法会一半埋进木框、一半露在台面上。
-    const stripH = 1.4, stripW = 6.4, stripLen = 32;
-    const stripY = RAIL_H + 0.9;
+    // 袋口铜包边：沿桌边/库边走，用半圆/四分之一圆的圆弧框住袋口。
+    // 中袋是贴着长库的半圆；角袋是沿着两条相邻居边的四分之一圆角。
+    // 不再用直条拼十字。
     for (const p of C.pockets) {
-      const hw = Math.sqrt(Math.max(0, p.mouth * p.mouth - C.BALL_R * C.BALL_R));
-      const atTop = p.y < C.T + 1;
-      const atBottom = p.y > C.B - 1;
-      const atLeft = p.x < C.L + 1;
-      const atRight = p.x > C.R - 1;
-      if (atTop || atBottom) {
-        const z = atTop ? Z(C.T) - 1.8 : Z(C.B) + 1.8;
-        for (const side of [-1, 1]) {
-          const bx = X(p.x) + side * (hw + stripLen / 2);
-          const m = new THREE.Mesh(new THREE.BoxGeometry(stripLen, stripH, stripW), goldMat);
-          m.position.set(bx, stripY, z);
-          scene.add(m);
-        }
+      const isMiddle = Math.abs(p.x - cx) < 2;
+      let centre, arc;
+      if (isMiddle) {
+        centre = p.y < C.T + 1 ? Math.PI / 2 : -Math.PI / 2; // 朝台内
+        arc = Math.PI;                                        // 半圆
+      } else {
+        const sx = p.x < cx ? 1 : -1;                         // 朝台内
+        const sy = p.y < C.T + 1 ? 1 : -1;
+        centre = Math.atan2(sy, sx);
+        arc = Math.PI / 2;                                    // 圆角四分之一圆
       }
-      if (atLeft || atRight) {
-        const x = atLeft ? X(C.L) - 1.8 : X(C.R) + 1.8;
-        for (const side of [-1, 1]) {
-          const bz = Z(p.y) + side * (hw + stripLen / 2);
-          const m = new THREE.Mesh(new THREE.BoxGeometry(stripW, stripH, stripLen), goldMat);
-          m.position.set(x, stripY, bz);
-          scene.add(m);
-        }
-      }
+      const geo = new THREE.TorusGeometry(p.r + 1.8, 1.35, 8, 36, arc);
+      geo.rotateZ(centre - arc / 2);
+      const rim = new THREE.Mesh(geo, goldMat);
+      rim.rotation.x = Math.PI / 2;
+      rim.position.set(X(p.x), RAIL_H + 0.9, Z(p.y));
+      scene.add(rim);
     }
 
     // 长边铜牌：深色底 + 金色字（canvas 纹理，不引外部图片）
