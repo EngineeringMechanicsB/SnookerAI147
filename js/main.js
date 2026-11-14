@@ -665,8 +665,17 @@
   document.addEventListener('pointerdown', () => { lastHumanInput = performance.now(); }, true);
   document.addEventListener('keydown', () => { lastHumanInput = performance.now(); }, true);
   setInterval(() => {
-    if (!G || G.paused || G.summaryOpen || G.state === 'moving' || G.state === 'stroking') return;
     const nw = performance.now();
+
+    // 兜底：气泡的隐藏计时器若被意外打断，超过 6.5s 也强制收掉。
+    if (dom.chatterBox && !dom.chatterBox.hidden &&
+        nw - lastChatterAt > 6500) {
+      dom.chatterBox.classList.remove('show');
+      dom.chatterBox.hidden = true;
+      if (chatterHideTimer) { clearTimeout(chatterHideTimer); chatterHideTimer = null; }
+    }
+
+    if (!G || G.paused || G.summaryOpen || G.state === 'moving' || G.state === 'stroking') return;
 
     if (spectate()) {
       if (nw - lastIdleAt > 120000 && Math.random() < 0.35) {
@@ -1253,6 +1262,8 @@
     const pct = Math.round(G.power / C.MAX_POWER * 100);
     const spin = plannerSpinText(s.shot);
     exitPlanner();
+    // 方案确认后把方向冻住：鼠标移动不再改线，点一下台面才解锁。
+    setAimLock(true);
     updatePowerDisplay();
     updateHUD();
     renderSpinPad();
@@ -2595,9 +2606,8 @@
     if (!G.cueBall || !G.cueBall.isOnTable()) return;
     const dx = px - G.cueBall.x, dy = py - G.cueBall.y;
     if (Math.hypot(dx, dy) < 6) return;
-    const target = Math.atan2(dy, dx);
-    let diff = C.normAngle(target - G.aimAngle);
-    G.aimAngle = C.normAngle(G.aimAngle + diff * 0.15);
+    // 不做插值：鼠标位置就是瞄准方向。旧的 0.15 平滑会让轨迹线明显慢半拍。
+    G.aimAngle = C.normAngle(Math.atan2(dy, dx));
   }
 
   // ---------- 瞄准锁定 ----------
