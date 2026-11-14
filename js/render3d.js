@@ -100,6 +100,10 @@
   let flyRoot = null, flyGroup = null, flyWings = [];
   let dZone = null;                     // 开球摆球时高亮的 D 区
   let tutorialRing = null;              // 教学：目标圈（3D 台面上的黄圈）
+  let planRoot = null;                  // 规划：3D 目标圈/点/轨迹
+  let planTargetRing = null, planObjRing = null, planCueRing = null;
+  let planCueLine = null, planTargetLine = null;
+  let planSolutionRef = null;
 
   // ---------- 球桌细节：包金、袋口铜圈、回球轨道 ----------
   let returnRoot = null;
@@ -3298,6 +3302,90 @@
     tutorialRing.material.opacity = 0.55 + Math.sin(Date.now() * 0.004) * 0.15;
   }
 
+  function ensurePlanRoot() {
+    if (planRoot) return planRoot;
+    planRoot = new THREE.Group();
+    planRoot.renderOrder = 5;
+    const makeRing = (color) => {
+      const geo = new THREE.RingGeometry(0.90, 1, 64);
+      geo.rotateX(-Math.PI / 2);
+      const mat = new THREE.MeshBasicMaterial({
+        color: color, transparent: true, opacity: 0.8,
+        side: THREE.DoubleSide, depthWrite: false,
+      });
+      const m = new THREE.Mesh(geo, mat);
+      m.position.y = 0.55;
+      planRoot.add(m);
+      return m;
+    };
+    planTargetRing = makeRing(0xffd93d);
+    planObjRing = makeRing(0xff6b7d);
+    planCueRing = makeRing(0x6ed2ff);
+    const makeLine = (color) => {
+      const geo = new THREE.BufferGeometry();
+      const mat = new THREE.LineBasicMaterial({
+        color: color, transparent: true, opacity: 0.85, depthWrite: false,
+      });
+      const l = new THREE.Line(geo, mat);
+      l.renderOrder = 6;
+      planRoot.add(l);
+      return l;
+    };
+    planCueLine = makeLine(0x6ed2ff);
+    planTargetLine = makeLine(0xffd93d);
+    scene.add(planRoot);
+    return planRoot;
+  }
+
+  function setPlanLine(line, path) {
+    if (!line) return;
+    if (!path || path.length < 2) { line.visible = false; return; }
+    const pts = [];
+    for (const p of path) pts.push(new THREE.Vector3(X(p.x), 0.75, Z(p.y)));
+    line.geometry.dispose();
+    line.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+    line.visible = true;
+  }
+
+  function updatePlan(view) {
+    const p = view.plan;
+    if (!p) {
+      if (planRoot) planRoot.visible = false;
+      planSolutionRef = null;
+      return;
+    }
+    ensurePlanRoot();
+    planRoot.visible = true;
+    const balls = view.balls;
+    const tgt = p.targetIndex >= 0 ? balls[p.targetIndex] : null;
+    if (tgt && tgt.isOnTable()) {
+      planTargetRing.visible = true;
+      planTargetRing.position.set(X(tgt.x), 0.55, Z(tgt.y));
+      planTargetRing.scale.set(C.BALL_R + 6, 1, C.BALL_R + 6);
+      const pulse = 0.55 + Math.sin(Date.now() * 0.005) * 0.18;
+      planTargetRing.material.opacity = pulse;
+    } else {
+      planTargetRing.visible = false;
+    }
+    if (p.objPoint) {
+      planObjRing.visible = true;
+      planObjRing.position.set(X(p.objPoint.x), 0.55, Z(p.objPoint.y));
+      planObjRing.scale.set(18, 1, 18);
+    } else planObjRing.visible = false;
+    if (p.cuePoint) {
+      planCueRing.visible = true;
+      planCueRing.position.set(X(p.cuePoint.x), 0.55, Z(p.cuePoint.y));
+      planCueRing.scale.set(18, 1, 18);
+    } else planCueRing.visible = false;
+
+    const sol = p.solution;
+    if (sol !== planSolutionRef) {
+      planSolutionRef = sol;
+      setPlanLine(planCueLine, sol && sol.ok ? sol.cuePath : null);
+      setPlanLine(planTargetLine, sol && sol.ok ? sol.targetPath : null);
+    }
+  }
+
   function render(view) {
     if (!ready) return;
     const dt = frameDt();
@@ -3347,6 +3435,7 @@
     updateReturnBalls(dt, balls);
     if (dZone) dZone.visible = view.state === 'placing';
     updateTutorialRing(view);
+    updatePlan(view);
 
     // ---- 目标球光环 ----
     let ri = 0;

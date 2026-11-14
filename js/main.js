@@ -1148,7 +1148,6 @@
       showMsg(t('plan.title'), t('plan.needAim'), 1800);
       return;
     }
-    if (use3d) toggle3d();
     G.plan = {
       stage: 0, targetIndex: -1,
       objPoint: null, cuePoint: null,
@@ -2354,6 +2353,7 @@
         guideMode: G.guideMode,
         pitchDeg: effSpin.pitchDeg,
         tutorialZone: (G.tutorial && G.tutorial.zone) ? G.tutorial.zone : null,
+        plan: G.plan,
         strokePull: G.stroke ? G.stroke.pull : 0,
         trail: G.trail,
         trailTime: G.trailTime,
@@ -2686,13 +2686,18 @@
   });
 
   canvas.addEventListener('mousedown', e => {
-    if (orbitEnabled()) return;
     if (G.plan) {
       if (e.button !== 0) return;
-      const q = cpos(e); G.mx = q.x; G.my = q.y;
+      let q = cpos(e);
+      if (use3d && orbitEnabled() && R3D && R3D.pickTable) {
+        const hit = R3D.pickTable(e.clientX, e.clientY);
+        if (hit) q = hit;
+      }
+      G.mx = q.x; G.my = q.y;
       handlePlannerClick(q.x, q.y);
       return;
     }
+    if (orbitEnabled()) return;
     if (e.button !== 0 || !humanTurn()) return;
     // 瞄准中：点台面 = 锁定 / 解锁（切换），不出杆。出杆只认空格和 Shoot 按钮，
     // 免得"想定住方向"的那一下把球打出去。
@@ -2745,9 +2750,18 @@
 
   canvas.addEventListener('touchstart', e => {
     e.preventDefault();
+    let p = cpos(e);
+    if (G.plan) {
+      if (use3d && orbitEnabled() && R3D && R3D.pickTable) {
+        const hit = R3D.pickTable(e.touches[0].clientX, e.touches[0].clientY);
+        if (hit) p = hit;
+      }
+      G.mx = p.x; G.my = p.y;
+      handlePlannerClick(p.x, p.y);
+      return;
+    }
     if (orbitEnabled()) return;
-    const p = cpos(e); G.mx = p.x; G.my = p.y;
-    if (G.plan) { handlePlannerClick(p.x, p.y); return; }
+    G.mx = p.x; G.my = p.y;
     if (!humanTurn()) return;
     if (G.state === 'aim' && G.cueBall.isOnTable()) {
       if (G.aimLocked) { touchAimed = false; setAimLock(false); return; }
@@ -3526,10 +3540,6 @@
   }
 
   function toggle3d() {
-    if (G.plan && !use3d) {
-      showMsg(t('plan.title'), t('plan.only2d'), 1600);
-      return;
-    }
     if (!canvas3d || !R3D || !R3D.available()) {
       showMsg('3D unavailable', 'three.js not found, or this browser has no WebGL', 2600);
       return;

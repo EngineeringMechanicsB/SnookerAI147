@@ -199,27 +199,37 @@
   function sfxCue(power) {
     const t = now() + 0.001;
     const p = clamp01(power);
-    // 皮头打在白球上：1~2ms 的木头冲击，频率低、衰减快。
-    // 不要高频噪声——那是"碎玻璃"的来源。
+    const hit = Math.pow(p, 0.7);
+
+    // 皮头触球的真实结构：
+    //   1~2ms 的高频"啪"（皮头/球面接触瞬态）
+    //   10~20ms 的球体高频模态
+    //   60~90ms 的杆身木头发闷共鸣
+    // 力度越大：瞬态越亮、越响，低频木头重量也越大。
     const src = noiseSource(whiteNoise(), false);
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
-    bp.frequency.setValueAtTime(620 + p * 320, t);
-    bp.Q.value = 0.75;
+    bp.frequency.setValueAtTime(2400 + p * 1500 + (Math.random() - 0.5) * 320, t);
+    bp.Q.value = 1.25;
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(0.16 + p * 0.28, t + 0.0015);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.035 + p * 0.015);
+    g.gain.linearRampToValueAtTime(0.11 + hit * 0.31, t + 0.0008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.013 + p * 0.007);
     src.connect(bp); bp.connect(g); g.connect(sfxBus);
-    src.start(t); src.stop(t + 0.07);
+    src.start(t); src.stop(t + 0.045);
 
-    // 杆身前段的木头共鸣（整体压低，更闷、更沉）
-    mode(150 + p * 38, t, 0.090, 0.12 + p * 0.14);
-    mode(290 + p * 60, t, 0.058, 0.055 + p * 0.075);
-    // 中频"嗒"给一点木头轮廓；仍远低于碎玻璃的频段
-    mode(610 + p * 100, t, 0.026, 0.028 + p * 0.028);
-    // 极少量皮头边缘，只给一点瞬态
-    mode(1420, t, 0.010, 0.010 + p * 0.007);
+    // 球体高频模态：清脆的主体
+    const f0 = 2380 + p * 820 + (Math.random() - 0.5) * 130;
+    mode(f0, t, 0.018, 0.045 + hit * 0.16);
+    mode(f0 * 1.44, t, 0.012, 0.022 + hit * 0.085);
+    mode(f0 * 2.13, t, 0.008, 0.010 + hit * 0.045);
+    // 极短皮头尖响
+    mode(3850 + p * 520, t, 0.006, 0.016 + hit * 0.035);
+
+    // 杆身前段木头共鸣：给"有力"的低频重量
+    mode(155 + p * 42, t, 0.085, 0.085 + hit * 0.13);
+    mode(315 + p * 85, t, 0.052, 0.045 + hit * 0.075);
+    mode(590 + p * 140, t, 0.030, 0.022 + hit * 0.040);
   }
 
   function sfxBall(vol, rate) {
@@ -888,7 +898,8 @@
     cueHit: function (power) {
       init();
       const p = Math.min(1, Math.max(0, (Number(power) || 0) / (SNK.MAX_POWER || 36)));
-      playSfx('cue', 0.30 + p * 0.50, 0.95 + p * 0.10);
+      // 直接把 0..1 的力度交给合成器，保留轻杆/重杆的细微差别。
+      playSfx('cue', p, 1);
     },
 
     // 调试入口：立即触发一次环境单次声，用来检查喇叭/警笛合成
