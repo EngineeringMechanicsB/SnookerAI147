@@ -104,6 +104,8 @@
   let planTargetRing = null, planObjRing = null, planCueRing = null;
   let planCueLine = null, planTargetLine = null;
   let planSolutionRef = null;
+  const chalkMeshes = [];               // 库边粉块
+  const chalkMatCache = {};
 
   // ---------- 球桌细节：包金、袋口铜圈、回球轨道 ----------
   let returnRoot = null;
@@ -573,19 +575,19 @@
     sight(sxL - railMid, szT + (szB - szT) * 0.5);
     sight(sxR + railMid, szT + (szB - szT) * 0.5);
 
-    // 袋口铜包边：沿桌边/库边走，用半圆/四分之一圆的圆弧框住袋口。
-    // 中袋是贴着长库的半圆；角袋是沿着两条相邻居边的四分之一圆角。
-    // 不再用直条拼十字。
+    // 袋口铜包边：沿桌边/库边走，用半圆/四分之一圆的圆弧包住袋口。
+    // 铜件在**不与台呢接触的一侧**（木框/库边外侧），不是压在台面上。
     for (const p of C.pockets) {
       const isMiddle = Math.abs(p.x - cx) < 2;
       let centre, arc;
       if (isMiddle) {
-        centre = p.y < C.T + 1 ? Math.PI / 2 : -Math.PI / 2; // 朝台内
+        // 中袋：铜半边朝库外，贴着长库木框
+        centre = p.y < C.T + 1 ? -Math.PI / 2 : Math.PI / 2;
         arc = Math.PI;                                        // 半圆
       } else {
         const sx = p.x < cx ? 1 : -1;                         // 朝台内
         const sy = p.y < C.T + 1 ? 1 : -1;
-        centre = Math.atan2(sy, sx);
+        centre = Math.atan2(sy, sx) + Math.PI;                // 翻到库外
         arc = Math.PI / 2;                                    // 圆角四分之一圆
       }
       const geo = new THREE.TorusGeometry(p.r + 1.8, 1.35, 8, 36, arc);
@@ -1109,9 +1111,9 @@
     // ---- 窗（氛围的入口，见 buildWindow）----
     buildWindow();
 
-    // ---- 三盏吊灯：沿长轴均布；中间那盏额外投一张软阴影 ----
+    // ---- 三盏吊灯：沿长轴均布；每盏都投软阴影，球会有多道影子 ----
     for (const k of [-1, 0, 1]) {
-      buildLamp(k * W / 3, k * 40, k === 0);
+      buildLamp(k * W / 3, k * 40, true);
     }
 
     // ---- 空气灰尘：台球厅射灯下的浮尘 ----
@@ -2413,16 +2415,16 @@
     lamp.position.set(0, shadeY - 30, 0);
     lamp.target.position.set(0, -shadeY, 0);
     if (shadowCaster) {
-      // 只有中间这盏投软阴影：三盏都开会让阴影 pass 翻三倍。
-      // 灯一摇，球的第二层影子也跟着轻轻移动。
+      // 每盏吊灯都投一张软阴影：三盏不同方位，球会落下多道方向略不同的影子。
+      // 灯一摇，三张影子也跟着轻微移动。
       lamp.castShadow = true;
-      lamp.shadow.mapSize.width = 512;
-      lamp.shadow.mapSize.height = 512;
+      lamp.shadow.mapSize.width = 1024;
+      lamp.shadow.mapSize.height = 1024;
       lamp.shadow.camera.near = 40;
       lamp.shadow.camera.far = 1800;
-      lamp.shadow.bias = -0.0015;
+      lamp.shadow.bias = -0.0012;
       lamp.shadow.normalBias = 0.8;
-      lamp.shadow.radius = 2;
+      lamp.shadow.radius = 1.5;
     }
     g.add(lamp);
     g.add(lamp.target);
@@ -3401,6 +3403,33 @@
     }
   }
 
+  function updateChalks(view) {
+    const list = view.chalks || [];
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i];
+      if (!chalkMeshes[i]) {
+        const key = String(c.hex || c.css || '#2f6cff');
+        if (!chalkMatCache[key]) {
+          chalkMatCache[key] = new THREE.MeshStandardMaterial({
+            color: c.hex || 0x2f6cff, roughness: 0.92, metalness: 0.02,
+          });
+        }
+        const m = new THREE.Mesh(new THREE.BoxGeometry(10, 7, 10), chalkMatCache[key]);
+        m.castShadow = true;
+        m.receiveShadow = true;
+        scene.add(m);
+        chalkMeshes[i] = m;
+      }
+      const m = chalkMeshes[i];
+      m.visible = true;
+      m.position.set(X(c.x), CUSHION_H + 3 + 3.6, Z(c.y));
+      m.rotation.y = c.rot || 0;
+    }
+    for (let i = list.length; i < chalkMeshes.length; i++) {
+      if (chalkMeshes[i]) chalkMeshes[i].visible = false;
+    }
+  }
+
   function render(view) {
     if (!ready) return;
     const dt = frameDt();
@@ -3451,6 +3480,7 @@
     if (dZone) dZone.visible = view.state === 'placing';
     updateTutorialRing(view);
     updatePlan(view);
+    updateChalks(view);
 
     // ---- 目标球光环 ----
     let ri = 0;

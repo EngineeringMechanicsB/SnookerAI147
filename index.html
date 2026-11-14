@@ -109,6 +109,18 @@
       <button class="plan-mini" id="planClear">Clear</button>
       <button class="plan-mini" id="planExit">Exit</button>
     </span>
+    <!-- 教学：同样塞进状态行，不新增行高 -->
+    <span class="tutorial-inline" id="tutorialHud" hidden>
+      <span class="tut-step" id="tutStep"></span>
+      <b id="tutName"></b>
+      <span class="tut-goal" id="tutGoal"></span>
+      <span class="tut-coach-line" id="tutCoachLine"></span>
+      <button class="tut-mini" id="tutCoach">Coach</button>
+      <button class="tut-mini primary" id="tutDemo">Demo</button>
+      <button class="tut-mini" id="tutRetry">Retry</button>
+      <button class="tut-mini" id="tutMenuBtn">Lessons</button>
+      <button class="tut-mini" id="tutExitBtn">Exit</button>
+    </span>
   </div>
 
   <!-- 台面：两层画布装在同一个 .canvas-fit 里，由 JS 按可用空间等比缩放。
@@ -129,23 +141,6 @@
        以前它们绝对定位浮在画布上（力度条压底库、加塞盘压左下角袋口）；
        第八轮先改成普通流，第九轮挪到**台面下方**，视线先看球台、再看控件。 -->
   <div class="control-bar" id="controlBar">
-
-    <!-- 教学：目标条放在控制条内，不压台面 -->
-    <div class="tutorial-hud" id="tutorialHud" hidden>
-      <div class="tut-hud-text">
-        <span class="tut-step" id="tutStep"></span>
-        <b id="tutName"></b>
-        <span class="tut-goal" id="tutGoal"></span>
-      </div>
-      <div class="tut-hud-actions">
-        <button class="tut-mini" id="tutCoach">Coach</button>
-        <button class="tut-mini primary" id="tutDemo">Demo</button>
-        <button class="tut-mini" id="tutRetry">Retry</button>
-        <button class="tut-mini" id="tutMenuBtn">Lessons</button>
-        <button class="tut-mini" id="tutExitBtn">Exit</button>
-      </div>
-      <div class="tut-coach-line" id="tutCoachLine"></div>
-    </div>
 
     <!-- 加塞控制盘：内圈 = 击点，外圈下半圆 = 球杆俯仰 -->
     <div class="spin-wrap">

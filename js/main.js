@@ -181,6 +181,9 @@
     replayCandidate: null,// 犯规后等待人类对手决定是否让对方重解
     replayPromptOpen: false,
     plan: null,           // 规划模式：{stage,targetIndex,objPoint,cuePoint,solution,busy}
+    chalks: [],           // 库边粉块：{x,y,rot,css,hex}
+    shotCount: 0,         // 距离下次出现粉块的杆数
+    chalkAt: 14,
     guideMode: 2,         // 辅助线：0 全无 / 1 只有母球 / 2 母球+第一颗 / 3 所有动的球
     stroke: null,         // 出杆动画快照：{angle,power,spinX,spinY,pitchDeg,t,pull,fired}
     needRed: true,
@@ -741,7 +744,10 @@
     if (!dom.tutorialHud) return;
     const lesson = tutLesson();
     const step = tutStep();
-    if (!G.tutorial || !lesson || !step) {
+    const active = !!(G.tutorial && lesson && step);
+    if (dom.statusMain && !G.plan) dom.statusMain.hidden = active;
+    if (dom.statusPrev && !G.plan) dom.statusPrev.hidden = active;
+    if (!active) {
       dom.tutorialHud.hidden = true;
       return;
     }
@@ -855,6 +861,7 @@
       demo: false,
       zone: null,
     };
+    G.chalks = [];
     G.players = [
       { type: 'human', level: 'master' },
       { type: 'human', level: 'master' },
@@ -1109,8 +1116,8 @@
   function updatePlannerHud() {
     if (!dom.plannerHud) return;
     const p = G.plan;
-    if (dom.statusMain) dom.statusMain.hidden = !!p;
-    if (dom.statusPrev) dom.statusPrev.hidden = !!p;
+    if (dom.statusMain) dom.statusMain.hidden = !!p || !!G.tutorial;
+    if (dom.statusPrev) dom.statusPrev.hidden = !!p || !!G.tutorial;
     if (!p) {
       dom.plannerHud.hidden = true;
       return;
@@ -1489,6 +1496,7 @@
     beginVisit(0);
 
     initBalls();
+    resetChalks();
     if (G.gameMode === 'classic') C.separateBalls(G.balls);
     G.ballsVersion++;
     resetAimToDefault();
@@ -1743,6 +1751,70 @@
     replayTurn(c.offender, true);
   }
 
+  // ---- 库边粉块（生活细节）----
+  const CHALK_COLORS = [
+    { css: '#2f6cff', hex: 0x2f6cff },
+    { css: '#26c6da', hex: 0x26c6da },
+    { css: '#2ed573', hex: 0x2ed573 },
+    { css: '#ffd93d', hex: 0xffd93d },
+    { css: '#ff6b7d', hex: 0xff6b7d },
+  ];
+  function chalkSpot() {
+    const cushion = C.CUSHION;
+    for (let tries = 0; tries < 40; tries++) {
+      const rail = (Math.random() * 4) | 0;
+      let x, y;
+      if (rail === 0) {
+        x = C.L + cushion + Math.random() * (C.TABLE_W - cushion * 2);
+        y = C.T - cushion * 0.55;
+      } else if (rail === 1) {
+        x = C.L + cushion + Math.random() * (C.TABLE_W - cushion * 2);
+        y = C.B + cushion * 0.55;
+      } else if (rail === 2) {
+        x = C.L - cushion * 0.55;
+        y = C.T + cushion + Math.random() * (C.TABLE_H - cushion * 2);
+      } else {
+        x = C.R + cushion * 0.55;
+        y = C.T + cushion + Math.random() * (C.TABLE_H - cushion * 2);
+      }
+      let ok = true;
+      for (const p of C.pockets) {
+        if (Math.hypot(x - p.x, y - p.y) < 72) { ok = false; break; }
+      }
+      if (!ok) continue;
+      for (const c of G.chalks) {
+        if (Math.hypot(x - c.x, y - c.y) < 42) { ok = false; break; }
+      }
+      if (ok) return { x: x, y: y, rot: (Math.random() - 0.5) * 0.7 };
+    }
+    return null;
+  }
+  function addChalk() {
+    if (!G.chalks) G.chalks = [];
+    if (G.chalks.length >= 3) return false;
+    const spot = chalkSpot();
+    if (!spot) return false;
+    const col = CHALK_COLORS[(Math.random() * CHALK_COLORS.length) | 0];
+    G.chalks.push({ x: spot.x, y: spot.y, rot: spot.rot, css: col.css, hex: col.hex });
+    return true;
+  }
+  function resetChalks() {
+    G.chalks = [];
+    G.shotCount = 0;
+    G.chalkAt = 10 + ((Math.random() * 11) | 0); // 10~20 杆
+    addChalk();
+    if (Math.random() < 0.55) addChalk();
+  }
+  function maybeAddChalk() {
+    if (!G.chalks) G.chalks = [];
+    G.shotCount++;
+    if (G.shotCount < G.chalkAt) return;
+    G.shotCount = 0;
+    G.chalkAt = 10 + ((Math.random() * 11) | 0);
+    if (G.chalks.length >= 3) G.chalks.shift(); // 旧的被拿走，留出位置
+    addChalk();
+  }
+
   function trailColor(b) {
     const a = { white: '255,255,255', red: '255,71,87', yellow: '255,217,61', green: '46,213,115',
       brown: '192,133,74', blue: '77,171,247', pink: '255,107,157', black: '150,150,150' }[b.label] || '200,200,200';
@@ -1966,6 +2038,7 @@
     // 统计与对话放在加分之后：否则最后一杆的得分/单杆会被漏记。
     recordShot(verdict);
     chatterAfterShot(verdict, p);
+    maybeAddChalk();
 
     // ---- 斯诺克规则：对手可以让犯规方从原位重解 ----
     // 只在"这一杆开始前确实被斯诺克、这一杆犯规"时提供。
@@ -2361,6 +2434,7 @@
         pitchDeg: effSpin.pitchDeg,
         tutorialZone: (G.tutorial && G.tutorial.zone) ? G.tutorial.zone : null,
         plan: G.plan,
+        chalks: G.chalks,
         strokePull: G.stroke ? G.stroke.pull : 0,
         trail: G.trail,
         trailTime: G.trailTime,
@@ -2371,6 +2445,23 @@
     }
 
     RENDER.drawTable(ctx);
+
+    // 库边粉块：只画在库边木框上，不碰台呢
+    if (G.chalks && G.chalks.length) {
+      for (const c of G.chalks) {
+        ctx.save();
+        ctx.translate(c.x, c.y);
+        ctx.rotate(c.rot || 0);
+        ctx.fillStyle = c.css;
+        ctx.fillRect(-5, -3.5, 10, 7);
+        ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-5, -3.5, 10, 7);
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+        ctx.fillRect(-4, -2.5, 8, 1.5);
+        ctx.restore();
+      }
+    }
 
     // 教学目标圈：白球最终位置 / 袋口 / 需要碰到的球
     if (G.tutorial && G.tutorial.zone) {

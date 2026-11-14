@@ -374,6 +374,24 @@ body.pool-mode .hud-break { display:none; }
   background:rgba(255,217,61,0.16); border-color:rgba(255,217,61,0.4); color:#ffd93d;
 }
 .plan-mini[hidden] { display:none; }
+
+/* 教学：同样塞进状态行 */
+.tutorial-inline {
+  display:flex; align-items:center; gap:6px;
+  flex:1 1 auto; min-width:0; overflow:hidden; white-space:nowrap;
+}
+.tutorial-inline[hidden] { display:none; }
+.tutorial-inline .tut-step { flex:0 0 auto; }
+.tutorial-inline b { color:#fff; font-size:11px; flex:0 0 auto; }
+.tutorial-inline .tut-goal,
+.tutorial-inline .tut-coach-line {
+  min-width:0; overflow:hidden; text-overflow:ellipsis;
+  color:rgba(255,255,255,0.52); font-size:10px;
+}
+.tutorial-inline .tut-coach-line { color:rgba(255,217,61,0.62); }
+.tutorial-inline .tut-mini {
+  flex:0 0 auto; height:18px; padding:0 6px; font-size:9px;
+}
 .status-main b { color:#eaeaea; font-weight:600; }
 .status-main .s-sub { color:#9a9a9a; font-size:12px; }
 .status-main .s-sub em { color:#ffd93d; font-style:normal; }
