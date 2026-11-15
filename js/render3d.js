@@ -104,8 +104,9 @@
   let planTargetRing = null, planObjRing = null, planCueRing = null;
   let planCueLine = null, planTargetLine = null;
   let planSolutionRef = null;
-  const chalkMeshes = [];               // 库边粉块
+  const chalkMeshes = [];               // 库边粉块：{group, top}
   const chalkMatCache = {};
+  let chalkBaseMat = null;
 
   // ---------- 球桌细节：包金、袋口铜圈、回球轨道 ----------
   let returnRoot = null;
@@ -3405,28 +3406,42 @@
 
   function updateChalks(view) {
     const list = view.chalks || [];
+    if (!chalkBaseMat) {
+      chalkBaseMat = new THREE.MeshStandardMaterial({
+        color: 0x141414, roughness: 0.96, metalness: 0.0,
+      });
+    }
     for (let i = 0; i < list.length; i++) {
       const c = list[i];
       if (!chalkMeshes[i]) {
-        const key = String(c.hex || c.css || '#2f6cff');
-        if (!chalkMatCache[key]) {
-          chalkMatCache[key] = new THREE.MeshStandardMaterial({
-            color: c.hex || 0x2f6cff, roughness: 0.92, metalness: 0.02,
-          });
-        }
-        const m = new THREE.Mesh(new THREE.BoxGeometry(10, 7, 10), chalkMatCache[key]);
-        m.castShadow = true;
-        m.receiveShadow = true;
-        scene.add(m);
-        chalkMeshes[i] = m;
+        const group = new THREE.Group();
+        const base = new THREE.Mesh(new THREE.BoxGeometry(10, 4, 10), chalkBaseMat);
+        base.position.y = 2;
+        base.castShadow = true;
+        base.receiveShadow = true;
+        group.add(base);
+        const top = new THREE.Mesh(new THREE.BoxGeometry(10, 3, 10), chalkBaseMat);
+        top.position.y = 5.5;
+        top.castShadow = true;
+        top.receiveShadow = true;
+        group.add(top);
+        scene.add(group);
+        chalkMeshes[i] = { group: group, top: top };
       }
-      const m = chalkMeshes[i];
-      m.visible = true;
-      m.position.set(X(c.x), CUSHION_H + 3 + 3.6, Z(c.y));
-      m.rotation.y = c.rot || 0;
+      const entry = chalkMeshes[i];
+      const key = String(c.hex || c.css || '#2f6cff');
+      if (!chalkMatCache[key]) {
+        chalkMatCache[key] = new THREE.MeshStandardMaterial({
+          color: c.hex || 0x2f6cff, roughness: 0.92, metalness: 0.02,
+        });
+      }
+      if (entry.top.material !== chalkMatCache[key]) entry.top.material = chalkMatCache[key];
+      entry.group.visible = true;
+      entry.group.position.set(X(c.x), CUSHION_H + 3, Z(c.y));
+      entry.group.rotation.y = c.rot || 0;
     }
     for (let i = list.length; i < chalkMeshes.length; i++) {
-      if (chalkMeshes[i]) chalkMeshes[i].visible = false;
+      if (chalkMeshes[i]) chalkMeshes[i].group.visible = false;
     }
   }
 

@@ -2452,13 +2452,16 @@
         ctx.save();
         ctx.translate(c.x, c.y);
         ctx.rotate(c.rot || 0);
+        // 上彩下黑：粉块下半是黑色底座，上半是彩色粉面
+        ctx.fillStyle = '#141414';
+        ctx.fillRect(-5, -0.5, 10, 4);
         ctx.fillStyle = c.css;
-        ctx.fillRect(-5, -3.5, 10, 7);
+        ctx.fillRect(-5, -3.5, 10, 3);
         ctx.strokeStyle = 'rgba(0,0,0,0.35)';
         ctx.lineWidth = 1;
         ctx.strokeRect(-5, -3.5, 10, 7);
         ctx.fillStyle = 'rgba(255,255,255,0.18)';
-        ctx.fillRect(-4, -2.5, 8, 1.5);
+        ctx.fillRect(-4, -2.7, 8, 1.3);
         ctx.restore();
       }
     }
