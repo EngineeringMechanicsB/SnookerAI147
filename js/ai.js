@@ -178,9 +178,16 @@
     for (let i = 0; i < n; i++) {
       const t = top[i];
       const rate = robustRate(state, balls, t.entry, prof);
-      const score = t.value * (0.12 + 0.88 * rate);
+      // 有加权分就用加权分打折；没有（旧数据/深层候选）才退回原始 value。
+      const base = typeof t.styleScore === 'number' && isFinite(t.styleScore)
+        ? Math.max(0.01, t.styleScore) : t.value;
+      const score = base * (0.15 + 0.85 * rate);
       if (!pick || score > pick.score) {
-        pick = { score: score, value: t.value, entry: t.entry, sub: t.sub, kind: t.kind, rate: rate };
+        if (t.entry) t.entry.potProb = rate;
+        pick = {
+          score: score, value: t.value, entry: t.entry, sub: t.sub, kind: t.kind,
+          rate: rate, styleScore: t.styleScore,
+        };
       }
     }
     return pick;
@@ -359,7 +366,11 @@
           const shot = { angle: cand.angle + angles[ai], power: power, spinX: 0, spinY: 0 };
           const r = tryPot(state, balls, shot, tIdx, cueIdx);
           if (r) {
-            out.push({ shot: shot, res: r.res, verdict: r.verdict, cand: cand, tIdx: tIdx, cueIdx: cueIdx });
+            out.push({
+              shot: shot, res: r.res, verdict: r.verdict, cand: cand,
+              tIdx: tIdx, cueIdx: cueIdx, tag: 'Direct pot',
+              cueStart: { x: cue.x, y: cue.y },
+            });
             found++;
             break;                        // 这个力度已经找到角度，换力度
           }
@@ -405,6 +416,7 @@
             out.push({
               shot: shot, res: r.res, verdict: r.verdict, cand: base,
               tIdx: entry.tIdx, cueIdx: entry.cueIdx, spinName: sp.name,
+              tag: 'Spin · ' + sp.name, cueStart: entry.cueStart,
             });
             break;
           }
@@ -653,7 +665,10 @@
       const cw = cfg.comfortW || 0;
       if (cw) value += comfortOf(e.cand) * cw;
 
-      if (all) all.push({ value: value, entry: e, sub: sub, kind: 'pot' });
+      if (all) all.push({
+        value: value, entry: e, sub: sub, kind: 'pot',
+        world: world, nextState: ns, cueStart: e.cueStart,
+      });
 
       if (!best || value > best.value) {
         best = {
@@ -661,13 +676,46 @@
           entry: e,
           sub: sub,
           kind: 'pot',
+          world: world,
         };
       }
     }
     if (!best) return null;
     if (all) {
       all.sort((a, b) => b.value - a.value);
-      best.top = all.slice(0, ROBUST_TOP + 2);
+      const top = all.slice(0, ROBUST_TOP + 2);
+      // 加权选球：只在根层、且有画像权重时做。先按旧 value 取前几名
+      // （保证搜索剪枝与预算不变），再用特征权重在这几名里重新挑。
+      if (C.aiStyle && cfg.prof) {
+        const ctx = { openBefore: C.aiStyle.openness(balls), balls: balls };
+        const pick = C.aiStyle.choosePot(top, cfg.prof, ctx);
+        if (pick) {
+          pick.entry.styleScore = pick.styleScore;
+          best = {
+            value: pick.value,
+            entry: pick.entry,
+            sub: pick.sub,
+            kind: pick.kind,
+            top: top,
+            styleScore: pick.styleScore,
+            world: pick.world,
+          };
+        }
+      }
+      best.top = top;
+      // 每个候选都把搜索价值和打完后的局面挂回 entry：
+      // rerankRobust 会从 top 里挑别的杆，不能只给当前 best 挂。
+      for (let i = 0; i < top.length; i++) {
+        const t = top[i];
+        if (!t || !t.entry) continue;
+        t.entry.value = t.value;
+        t.entry.world = t.world;
+        if (typeof t.styleScore === 'number') t.entry.styleScore = t.styleScore;
+      }
+    }
+    if (best.entry) {
+      best.entry.value = best.value;
+      best.entry.world = best.world || best.entry.world;
     }
     return best;
   }
@@ -946,7 +994,9 @@
 
     const cueIdx = balls.indexOf(cue);
     let best = null, bestScore = Infinity;      // 总体最优（可能仍有漏球）
+    let bestStyle = -Infinity;                  // 加权最优（球员偏好）
     let perfect = null, perfectScore = Infinity;// **零漏球且解不到** 的最优
+    let perfectStyle = -Infinity;
     let perfectCount = 0;
 
     const aborts = (ev, world) => {
@@ -1020,10 +1070,30 @@
           }
         }
       }
-      const entry = { shot: shot, res: r.res, verdict: v, cand: { ball: t }, spinName: spinName };
-      if (score < bestScore) {
-        bestScore = score;
-        best = { value: -score, kind: 'safety', entry: entry, sub: null, ease: score, view: view };
+      const entry = {
+        shot: shot, res: r.res, verdict: v, cand: { ball: t },
+        spinName: spinName, tag: 'Safety', world: world,
+        cueStart: { x: cue.x, y: cue.y },
+      };
+      // 加权防守分：不只是"斯诺克做得死不死"，还看母球跑了多远、
+      // 线路多复杂、球局是否被越做越散。每个球员的防守权重不同。
+      if (C.aiStyle && cfg.prof) {
+        entry.styleScore = C.aiStyle.rating.safety(entry, cfg.prof, {
+          openBefore: C.aiStyle.openness(balls), balls: balls,
+        });
+      }
+      const styleVal = typeof entry.styleScore === 'number' ? entry.styleScore : null;
+      const prevBestScore = bestScore;
+      if (score < bestScore) bestScore = score;
+      // 防守杆也按球员权重挑：希金斯/塞尔比更看重"对手有多难受"，
+      // 奥沙利文更在意不要把白球送太远。没有加权分时才退回 raw snooker score。
+      const betterSafety = !best
+        || (styleVal !== null && styleVal > bestStyle)
+        || (styleVal === null && bestStyle === -Infinity && score < prevBestScore);
+      if (betterSafety) {
+        bestStyle = styleVal === null ? -Infinity : styleVal;
+        best = { value: -score, kind: 'safety', entry: entry, sub: null,
+                 ease: score, view: view, styleScore: entry.styleScore };
       }
       // 真斯诺克：对手既打不进、也直接碰不到 → 只能撞库解。
       // 但如果白球贴着别的球（cueNear 很小），这不是真斯诺克，只是"贴球"；
@@ -1031,10 +1101,16 @@
       const glued = nearRed < C.BALL_R * 3;
       if (view.potLines === 0 && view.hitLines === 0 && !(neg >= 3 && glued)) {
         perfectCount++;
-        if (score < perfectScore) {
-          perfectScore = score;
+        const prevPerfectScore = perfectScore;
+        if (score < perfectScore) perfectScore = score;
+        const betterPerfect = !perfect
+          || (styleVal !== null && styleVal > perfectStyle)
+          || (styleVal === null && perfectStyle === -Infinity && score < prevPerfectScore);
+        if (betterPerfect) {
+          perfectStyle = styleVal === null ? -Infinity : styleVal;
           perfect = { value: -score, kind: 'safety', entry: entry, sub: null,
-                      ease: score, view: view, snookered: true };
+                      ease: score, view: view, snookered: true,
+                      styleScore: entry.styleScore };
           perfectStale = 0;
         }
         return true;
@@ -1436,14 +1512,25 @@
   //   safetyThorough : 防守搜索投入程度（越大磨得越细，越能找到零漏球）
   //   desperate  : true = 只要有一丝进球可能就绝不防守（147 大师）
   //   pace       : 出杆节奏倍数（奥沙利文 0.45 = 飞快，塞尔比 1.5 = 磨）
+  //   tactics    : 选球风格权重。见 js/ai-style.js：
+  //                高 potWeight = 更重视把握大的球；
+  //                高 distanceCost/thinCost/complexityCost = 不爱长台/薄球/花活；
+  //                高 safetyValue = 愿意用防守难度换进攻风险；
+  //                compareSafety = 进攻加权分低到多少才考虑防守。
+  //   forceAfter : 连续几杆没进球后强制拼一杆（每个球员不同）。
+  const TACTICS = C.aiStyle ? C.aiStyle.tactics : function (o) { return o; };
   const PROFILES = {
     easy: {
       key: 'easy', name: 'Novice', desc: 'Wide angle error, no position play',
-      style: 'random',
+      style: 'random', forceAfter: 3,
+      tactics: TACTICS({ potWeight: 0.8, distanceCost: 1.1, thinCost: 1.1,
+        complexityCost: 1.0, compareSafety: 3.0 }),
     },
     medium: {
       key: 'medium', name: 'Amateur', desc: 'Reads the pot, rough on position',
-      style: 'aim',
+      style: 'aim', forceAfter: 3,
+      tactics: TACTICS({ potWeight: 0.95, distanceCost: 0.9, thinCost: 0.9,
+        compareSafety: 3.6 }),
     },
     hard: {
       key: 'hard', name: 'Veteran', desc: 'Precise cueing, plans the next shot',
@@ -1454,7 +1541,11 @@
       style: 'strong', depth: 3, budget: 800, ticks: 1040, topCands: 30, useSpin: false,
       noise: 0, powerErr: 0, maxCut: 1.30, pickSafetyAbove: Infinity,
       colorBias: 1.2, blackBias: 0.4, positionW: 1.0,
-      safetyThorough: 0.6, pace: 1.0, deepSearch: true,
+      safetyThorough: 0.6, pace: 1.0, deepSearch: true, forceAfter: 3,
+      tactics: TACTICS({ potWeight: 1.15, riskCost: 1.0, distanceCost: 0.55,
+        thinCost: 0.55, spinCost: 0.45, cueTravelCost: 0.40, objectTravelCost: 0.35,
+        safetyValue: 0.90, complexityCost: 0.50, opennessValue: 0.60,
+        compareSafety: 6.0, breakWeight: 0.85 }),
     },
     master: {
       key: 'master', name: 'Master 147',
@@ -1469,7 +1560,11 @@
       // 会让 master 自战变成 120 杆纯防守死局（双方都把白球藏死，谁都没有
       // 可打的球）。0.75 仍然做真斯诺克，但会留出薄球机会 —— 实战对人也更
       // 像职业球员：压迫感在，但不会永远解不到。
-      safetyThorough: 0.75, desperate: true, pace: 0.9, flair: 0.12,
+      safetyThorough: 0.75, desperate: true, pace: 0.9, flair: 0.12, forceAfter: 2,
+      tactics: TACTICS({ potWeight: 1.55, riskCost: 1.25, distanceCost: 0.22,
+        thinCost: 0.22, spinCost: 0.20, cueTravelCost: 0.22, objectTravelCost: 0.20,
+        safetyValue: 0.55, complexityCost: 0.20, opennessValue: 0.90,
+        compareSafety: 2.5, breakWeight: 1.15 }),
     },
 
     // ================================================================
@@ -1496,6 +1591,12 @@
       noise: 0.00012, powerErr: 0.0024, fluff: 0.05, maxCut: 1.36, pickSafetyAbove: Infinity,
       colorBias: 2.0, blackBias: 1.9, positionW: 1.05, comfortW: 1.2,
       safetyThorough: 0.45, pace: 0.45, deepSearch: true, aggressive: true, flair: 0.18,
+      forceAfter: 2,
+      // 火箭：高概率进攻优先，怕复杂线路；长台和薄球不是不能打，只是不主动找。
+      tactics: TACTICS({ potWeight: 1.42, riskCost: 1.15, distanceCost: 0.48,
+        thinCost: 0.46, spinCost: 0.42, cueTravelCost: 0.32, objectTravelCost: 0.28,
+        safetyValue: 0.62, complexityCost: 0.30, opennessValue: 0.78,
+        compareSafety: 5.0, breakWeight: 0.95 }),
     },
     higgins: {
       key: 'higgins', name: 'John Higgins',
@@ -1504,6 +1605,12 @@
       noise: 0.000105, powerErr: 0.0021, fluff: 0.045, maxCut: 1.30, pickSafetyAbove: 1.20,
       colorBias: 1.4, blackBias: 1.2, positionW: 1.18, comfortW: 1.25,
       safetyThorough: 1.6, pace: 1.05, deepSearch: true, flair: 0.08,
+      forceAfter: 4,
+      // 希金斯：最看重安全球质量，长台/薄球都挑，不轻易送机会。
+      tactics: TACTICS({ potWeight: 1.02, riskCost: 0.88, distanceCost: 0.86,
+        thinCost: 0.88, spinCost: 0.66, cueTravelCost: 0.54, objectTravelCost: 0.42,
+        safetyValue: 1.65, complexityCost: 0.86, opennessValue: 0.38,
+        compareSafety: 13.0, breakWeight: 0.78 }),
     },
     trump: {
       key: 'trump', name: 'Judd Trump',
@@ -1512,6 +1619,12 @@
       noise: 0.00015, powerErr: 0.0030, fluff: 0.07, maxCut: 1.38, pickSafetyAbove: Infinity,
       colorBias: 1.8, blackBias: 1.7, positionW: 0.78, comfortW: 1.4,
       safetyThorough: 0.4, pace: 0.7, deepSearch: true, aggressive: true, flair: 0.22,
+      forceAfter: 2,
+      // 特鲁姆普：长台成本最低，敢打薄球和花活；防守只是过渡。
+      tactics: TACTICS({ potWeight: 1.20, riskCost: 1.35, distanceCost: 0.20,
+        thinCost: 0.28, spinCost: 0.38, cueTravelCost: 0.50, objectTravelCost: 0.26,
+        safetyValue: 0.42, complexityCost: 0.24, opennessValue: 0.84,
+        compareSafety: 3.5, breakWeight: 0.82 }),
     },
     ding: {
       key: 'ding', name: 'Ding Junhui',
@@ -1520,6 +1633,12 @@
       noise: 0.000114, powerErr: 0.0024, fluff: 0.05, maxCut: 1.34, pickSafetyAbove: 1.32,
       colorBias: 1.6, blackBias: 1.5, positionW: 1.28, comfortW: 1.25,
       safetyThorough: 0.9, pace: 0.95, deepSearch: true, flair: 0.12,
+      forceAfter: 3,
+      // 丁俊晖：母球控制权重最高，愿意为走位多走一点；进攻选择均衡。
+      tactics: TACTICS({ potWeight: 1.24, riskCost: 0.96, distanceCost: 0.52,
+        thinCost: 0.50, spinCost: 0.44, cueTravelCost: 0.82, objectTravelCost: 0.40,
+        safetyValue: 0.86, complexityCost: 0.46, opennessValue: 0.62,
+        compareSafety: 9.0, breakWeight: 1.00 }),
     },
     selby: {
       key: 'selby', name: 'Mark Selby',
@@ -1528,6 +1647,12 @@
       noise: 0.000135, powerErr: 0.0027, fluff: 0.05, maxCut: 1.28, pickSafetyAbove: 1.15,
       colorBias: 1.3, blackBias: 1.1, positionW: 1.22, comfortW: 1.3,
       safetyThorough: 1.7, pace: 1.5, deepSearch: true, defensive: true, flair: 0.06,
+      forceAfter: 5,
+      // 塞尔比：最难缠的防守权重，愿意把局面拖进泥里；不轻易拼长台。
+      tactics: TACTICS({ potWeight: 0.92, riskCost: 0.72, distanceCost: 0.96,
+        thinCost: 1.00, spinCost: 0.78, cueTravelCost: 0.58, objectTravelCost: 0.46,
+        safetyValue: 1.85, complexityCost: 0.95, opennessValue: 0.22,
+        compareSafety: 15.0, breakWeight: 0.68 }),
     },
   };
   const LEVELS = PROFILES;    // 旧代码用 LEVELS 这个名字，保留别名
@@ -1628,6 +1753,8 @@
       blackBias: prof.blackBias,
       positionW: prof.positionW,
       comfortW: prof.comfortW || 0,
+      tactics: prof.tactics,
+      prof: prof,
       branch: prof.branch || 6,
       // 递归里每一层都要知道"根有多深"，才能算出自己离根多远（候选网收缩用）。
       // 不写这个的话递归调用会把 depth 当成根深度，候选网永远满配。
@@ -1648,6 +1775,8 @@
       blackBias: prof.blackBias,
       positionW: prof.positionW,
       comfortW: prof.comfortW || 0,
+      tactics: prof.tactics,
+      prof: prof,
     };
     if (phase === 1) {
       base.powerMults = [0.8, 1.0, 1.2, 1.45, 1.8];
@@ -1666,7 +1795,9 @@
     const cfg = cfgFor(prof, deadline);
     // 连续几杆没进球：不再满足于"没机会就做斯诺克"，必须把能想到的
     // 进球线路全部试一遍。见 forcedPot() 的注释。
-    const force = !!(state.forcePot || (state.noPotStreak || 0) >= 3);
+    // 阈值每个球员不同：奥沙利文/特鲁姆普 2 杆就开拼，塞尔比能磨到 5 杆。
+    const forceAfter = prof.forceAfter || 3;
+    const force = !!(state.forcePot || (state.noPotStreak || 0) >= forceAfter);
 
     let best = null;
     try {
@@ -1714,6 +1845,46 @@
       // 真实球员会挑球：太薄的机会，防守型选手宁可先做一杆。
       // 但连续不进之后，连最保守的画像也要接受薄球——先止住"只会做球"。
       if (force || !(cut > prof.pickSafetyAbove)) {
+        const openBefore = C.aiStyle ? C.aiStyle.openness(balls) : 0.5;
+        const ctx = { openBefore: openBefore, balls: balls };
+        const potScore = C.aiStyle
+          ? C.aiStyle.rating.pot(best.entry, prof, ctx)
+          : best.value;
+        const threshold = prof.tactics
+          ? prof.tactics.compareSafety
+          : -Infinity;
+
+        // 只有"这一杆的加权价值确实很低"时才值得再花预算做防守。
+        // 这样既不会用超远斯诺克换掉简单黑球，也允许塞尔比/希金斯
+        // 在只有极限薄球时选择先做一杆。
+        if (!force && C.aiStyle && potScore < threshold) {
+          const safe = safetySearch(state, balls, {
+            deadline: now() + Math.max(140, budgetMs * 0.42),
+            safetyThorough: prof.safetyThorough,
+            prof: prof,
+          });
+          if (safe) {
+            if (!safe.entry.world && safe.entry.res) {
+              safe.entry.world = safe.entry.res.finalBalls;
+            }
+            const safetyScore = C.aiStyle.rating.safety(safe.entry, prof, ctx);
+            safe.entry.styleScore = safetyScore;
+            // 必须明显更好才放弃进攻，避免两个分数接近时来回摇摆。
+            if (safetyScore > potScore + 0.45) {
+              return {
+                shot: applyHumanError(safe.entry.shot, prof, SAFE_ERR),
+                kind: 'safety',
+                reason: safe.snookered
+                  ? 'Tight snooker · opponent must go off cushions'
+                  : 'Risk too high · playing safe',
+                value: safe.value,
+                styleScore: safetyScore,
+                spinName: safe.entry.spinName,
+              };
+            }
+          }
+        }
+
         return {
           shot: applyHumanError(best.entry.shot, prof),
           kind: 'pot',
@@ -1723,6 +1894,7 @@
               ? `Chasing 147 · ${C.COL_CN[ball.label] || ''} for ${best.entry.verdict.points}`
               : `Potting the ${C.COL_CN[ball.label] || ''}`,
           value: best.value,
+          styleScore: potScore,
           spinName: best.entry.spinName,
         };
       }
@@ -1748,6 +1920,7 @@
     const safe = safetySearch(state, balls, {
       deadline: now() + budgetMs * (prof.safetyThorough >= 1.2 ? 1.3 : 1.0),
       safetyThorough: prof.safetyThorough,
+      prof: prof,
     });
     if (safe) {
       return {
@@ -1757,6 +1930,7 @@
           ? 'Tight snooker · opponent must go off cushions'
           : 'Nothing on · playing safe',
         value: safe.value,
+        styleScore: safe.styleScore,
         spinName: safe.entry.spinName,
       };
     }
@@ -1796,14 +1970,20 @@
       value: e.value,
       kind: e.kind,
       sub: null,
+      styleScore: typeof e.styleScore === 'number' ? e.styleScore : null,
       entry: {
         shot: en.shot,
         tIdx: en.tIdx,
         cueIdx: en.cueIdx,
         spinName: en.spinName || null,
+        tag: en.tag || null,
+        potProb: typeof en.potProb === 'number' ? en.potProb : null,
+        styleScore: typeof e.styleScore === 'number' ? e.styleScore : null,
         cand: {
           cut: en.cand ? en.cand.cut : 0,
-          ball: { label: en.cand && en.cand.ball ? en.cand.ball.label : '' },
+          ball: {
+            label: en.cand && en.cand.ball ? en.cand.ball.label : '',
+          },
         },
         verdict: { points: en.verdict ? en.verdict.points : 0 },
       },
@@ -1834,11 +2014,13 @@
         deadline: now() + sBudget,
         safetyThorough: prof.safetyThorough,
         safetySlice: { index: index, total: total },
+        prof: prof,
       });
       return {
         packed: null,
         safety: safe ? {
           value: safe.value,
+          styleScore: typeof safe.styleScore === 'number' ? safe.styleScore : null,
           snookered: !!safe.snookered,
           shot: safe.entry.shot,
           spinName: safe.entry.spinName || null,
@@ -1874,6 +2056,7 @@
           ? `Chasing 147 · ${C.COL_CN[ball] || ''} for ${best.entry.verdict.points}`
           : `Potting the ${C.COL_CN[ball] || ''}`,
       value: best.value,
+      styleScore: typeof best.styleScore === 'number' ? best.styleScore : null,
       spinName: best.entry.spinName,
     };
   }
@@ -1885,6 +2068,7 @@
     const safe = safetySearch(state, balls, {
       deadline: now() + budgetMs * (prof.safetyThorough >= 1.2 ? 1.3 : 1.0),
       safetyThorough: prof.safetyThorough,
+      prof: prof,
     });
     if (safe) {
       return {
@@ -1894,6 +2078,7 @@
           ? 'Tight snooker · opponent must go off cushions'
           : 'Nothing on · playing safe',
         value: safe.value,
+        styleScore: safe.styleScore,
         spinName: safe.entry.spinName,
       };
     }
@@ -1911,7 +2096,11 @@
       if (!p || !p.shot) continue;
       if (!pick) { pick = p; continue; }
       if (p.snookered && !pick.snookered) { pick = p; continue; }
-      if (p.snookered === pick.snookered && p.value > pick.value) pick = p;
+      if (p.snookered === pick.snookered) {
+        const ps = typeof p.styleScore === 'number' ? p.styleScore : p.value;
+        const qs = typeof pick.styleScore === 'number' ? pick.styleScore : pick.value;
+        if (ps > qs) pick = p;
+      }
     }
     if (!pick) return null;
     return {
@@ -1921,6 +2110,7 @@
         ? 'Tight snooker · opponent must go off cushions'
         : 'Nothing on · playing safe',
       value: pick.value,
+      styleScore: typeof pick.styleScore === 'number' ? pick.styleScore : null,
       spinName: pick.spinName,
     };
   }
@@ -2066,7 +2256,7 @@
       };
     }
     // 连续没进球：池球同样允许翻袋、组合球、加塞，先把球打进去
-    if (state.forcePot || (state.noPotStreak || 0) >= 3) {
+    if (state.forcePot || (state.noPotStreak || 0) >= (prof.forceAfter || 3)) {
       const fp = forcedPot(state, balls, Math.max(350, (budgetMs || 900) * 0.8));
       if (fp) return fp;
     }

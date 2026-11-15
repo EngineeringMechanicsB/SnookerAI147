@@ -53,7 +53,8 @@
     if (workers.length || failed) return;
     try {
       const base = scriptBase();
-      const files = ['constants.js', 'cueclear.js', 'physics.js', 'rules.js', 'sim.js', 'ai.js'];
+      const files = ['constants.js', 'cueclear.js', 'physics.js', 'rules.js', 'sim.js',
+        'ai-style.js', 'ai.js'];
       const urls = files.map(f => new URL(f, base).href);
       const src = [
         'self.window = self;',
@@ -171,9 +172,28 @@
     if (!force && (prof.noise || prof.powerErr)) {
       try { pick = C.ai.rerankRobust(state, balls, top, prof); } catch (e) { pick = null; }
     }
-    const entry = pick && pick.entry ? pick.entry : top[0];
+    let entry = pick && pick.entry ? pick.entry : null;
+    if (!entry) {
+      // 加权选球：worker 已经把每杆的特征分装在 entry.styleScore 里。
+      // 没有加权分时才退回原来的 value 排序。
+      let bestScore = -Infinity;
+      for (let i = 0; i < top.length; i++) {
+        const e = top[i];
+        if (!e || !e.entry || e.entry.verdict.points <= 0) continue;
+        const score = typeof e.styleScore === 'number' ? e.styleScore : e.value;
+        if (score > bestScore) { bestScore = score; entry = e; }
+      }
+    }
     if (!entry || !entry.entry || entry.entry.verdict.points <= 0) return null;
     return C.ai.decisionFromBest(entry, prof, force);
+  }
+
+  // 进攻加权分低到球员自己的 compareSafety 以下时，值得再花一次搜索
+  // 去和防守杆比较。简单球（黑球贴袋口）分很高，不会触发。
+  function shouldCompareSafety(decision, prof) {
+    if (!decision || decision.kind !== 'pot') return false;
+    if (!prof.tactics || typeof decision.styleScore !== 'number') return false;
+    return decision.styleScore < prof.tactics.compareSafety;
   }
 
   function decideAsync(state, balls, opts) {
@@ -196,7 +216,8 @@
     const budget = (opts.budgetMs === undefined || opts.budgetMs === null)
       ? (prof.budget || 800) : opts.budgetMs;
     const ballData = toPlainBalls(balls);
-    const force = !!(state.forcePot || (state.noPotStreak || 0) >= 3);
+    const forceAfter = (prof && prof.forceAfter) || 3;
+    const force = !!(state.forcePot || (state.noPotStreak || 0) >= forceAfter);
 
     // 连续不进：交给单个 worker 跑完整的强制进球搜索（直达/加塞/翻袋/组合球）。
     // 不切片：这是一次性的穷举，切碎后每个 worker 都只看到一部分线路。
@@ -237,6 +258,17 @@
       if (force) {
         return (decision ? Promise.resolve(decision) : runForce())
           .then(function (d) { return d || runSafety(); });
+      }
+
+      // 加权分很低的进攻（极限薄球/长台/复杂线路）才值得和防守比较。
+      // 简单黑球分高，直接出杆，绝不会被"超远斯诺克"换掉。
+      if (shouldCompareSafety(decision, prof)) {
+        return runSafety().then(function (d) {
+          if (d && d.kind === 'safety' &&
+              typeof d.styleScore === 'number' &&
+              d.styleScore > decision.styleScore + 0.45) return d;
+          return decision;
+        });
       }
 
       // 常规搜索没捞到球：和同步路径一样，再跑两轮"广撒网"

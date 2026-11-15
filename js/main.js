@@ -442,17 +442,21 @@
   }
 
   function publicState() {
+    const p = G.currentPlayer;
+    const pl = G.players && G.players[p];
+    const forceAt = (pl && pl.type === 'ai' && C.ai.PROFILES[pl.level] &&
+      C.ai.PROFILES[pl.level].forceAfter) || 3;
     return {
       mode: G.gameMode,
       isRespottedBlack: G.isRespottedBlack,
       needRed: G.needRed,
       pottedRedThisTurn: G.pottedRedThisTurn,
-      currentPlayer: G.currentPlayer,
+      currentPlayer: p,
       scores: G.scores.slice(),
       opening: !!G.opening,
       negativeStreak: G.negativeStreak || 0,
-      noPotStreak: (G.noPotStreak && G.noPotStreak[G.currentPlayer]) || 0,
-      forcePot: !!(G.noPotStreak && G.noPotStreak[G.currentPlayer] >= 3),
+      noPotStreak: (G.noPotStreak && G.noPotStreak[p]) || 0,
+      forcePot: !!(G.noPotStreak && G.noPotStreak[p] >= forceAt),
       poolOpen: G.poolOpen !== false,
       poolGroups: (G.poolGroups || [null, null]).slice(),
     };
@@ -2126,10 +2130,14 @@
     } else {
       G.noPotStreak[p] = (G.noPotStreak[p] || 0) + 1;
       const shooter = G.players[p];
-      if (shooter && shooter.type === 'ai' && G.noPotStreak[p] >= 3 && G.forceNotice[p] < 3) {
-        G.forceNotice[p] = 3;
+      const forceAfter = (shooter && C.ai.PROFILES[shooter.level] &&
+        C.ai.PROFILES[shooter.level].forceAfter) || 3;
+      if (shooter && shooter.type === 'ai' &&
+          G.noPotStreak[p] >= forceAfter && G.forceNotice[p] < forceAfter) {
+        G.forceNotice[p] = forceAfter;
         showMsg('Must score',
-          seatName(shooter) + ' has gone three shots without a pot — forcing the attack', 3200);
+          seatName(shooter) + ' has gone ' + forceAfter +
+          ' shots without a pot — forcing the attack', 3200);
       }
     }
 
