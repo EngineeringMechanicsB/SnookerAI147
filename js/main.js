@@ -64,8 +64,9 @@
     viewBtn: $('viewBtn'), orbitBtn: $('orbitBtn'),
     // 声音
     soundBtn: $('soundBtn'), volRange: $('volRange'),
-    // 光照氛围
+    // 光照氛围 / 画质
     ambienceSelect: $('ambienceSelect'),
+    qualitySelect: $('qualitySelect'),
     // 辅助线模式
     guideSelect: $('guideSelect'),
     // 语言 / 对话
@@ -83,6 +84,11 @@
     summaryOverlay: $('summaryOverlay'), sumTitle: $('sumTitle'), sumScore: $('sumScore'),
     sumNameA: $('sumNameA'), sumNameB: $('sumNameB'), sumBody: $('sumBody'),
     sumRematch: $('sumRematch'), sumClose: $('sumClose'), sumHint: $('sumHint'),
+    boardOverlay: $('boardOverlay'), boardTitle: $('boardTitle'), boardSub: $('boardSub'),
+    boardEntry: $('boardEntry'), boardName: $('boardName'), boardSave: $('boardSave'),
+    boardEmpty: $('boardEmpty'), boardBody: $('boardBody'), boardNameHead: $('boardNameHead'),
+    boardScoreHead: $('boardScoreHead'), boardTimeHead: $('boardTimeHead'),
+    boardBestHead: $('boardBestHead'), boardClose: $('boardClose'),
     // 规划
     plannerBtn: $('plannerBtn'), plannerHud: $('plannerHud'),
     planStep: $('planStep'), planTitle: $('planTitle'), planHint: $('planHint'),
@@ -223,6 +229,9 @@
     restartTimer: null,
     stats: null,        // [座位1, 座位2] 的本局统计，newSeatStats() 生成
     summaryOpen: false,
+    boardOpen: false,
+    boardOffer: null,   // 赢局后待录入 {score,bestBreak,timeMs}
+    frameStartedAt: 0,  // 本局开始时刻，用于排行榜计时
     // ---- 提示去重（第十一轮）----
     breakMilestone: 0,       // 本杆已提示过的单杆里程碑（50 / 100）
     maxOnNoticed: false,     // 本杆是否已提示过 “147 on”
@@ -471,7 +480,8 @@
   function seatName(p) {
     if (!p) return 'Player';
     if (p.type === 'human') return t('ui.human');
-    return (C.ai.LEVELS[p.level] || {}).name || 'AI';
+    const prof = C.ai.LEVELS[p.level] || {};
+    return (I && I.lang === 'zh' && prof.nameZh) ? prof.nameZh : (prof.name || 'AI');
   }
 
   function labelText(label) {
@@ -521,9 +531,8 @@
 
     dom.breakLabel.textContent = String(G.breaks[G.currentPlayer]);
     dom.highLabel.textContent = t('ui.high', { n: G.highBreak });
-    const threads = C.aiPool && C.aiPool.size ? C.aiPool.size() : 0;
     const think = G.aiThinking
-      ? (t('ui.thinking') + (threads > 1 ? ' · ' + threads + ' ' + t('ui.threads') : ''))
+      ? t('ui.thinking')
       : (G.paused && G.aiVs !== 'off' ? t('ui.paused') : '');
     dom.thinkLabel.textContent = think;
     dom.thinkLabel.style.opacity = think ? '1' : '0';
@@ -1454,6 +1463,10 @@
     if (dom.plannerHud) dom.plannerHud.hidden = true;
     G.scores = [0, 0];
     G.breaks = [0, 0];
+    G.frameStartedAt = Date.now();
+    G.boardOffer = null;
+    G.boardOpen = false;
+    if (dom.boardOverlay) { dom.boardOverlay.hidden = true; dom.boardOverlay.classList.remove('show'); }
     G.currentPlayer = 0;
     G.state = 'aim';
     G.power = 0;
@@ -2140,11 +2153,9 @@
         C.ai.PROFILES[shooter.level].forceAfter) || 3;
       const bothAI = !!(shooter && shooter.type === 'ai' &&
         opponent && opponent.type === 'ai');
-      if (bothAI && G.noPotStreak[p] >= forceAfter && G.forceNotice[p] < forceAfter) {
+      // 只记内部计数，不把“几杆没进、下一杆必须拼”这种设计暴露给玩家。
+      if (bothAI && G.noPotStreak[p] >= forceAfter) {
         G.forceNotice[p] = forceAfter;
-        showMsg('Must score',
-          seatName(shooter) + ' has gone ' + forceAfter +
-          ' shots without a pot — forcing the attack', 3200);
       }
     }
 
@@ -2182,7 +2193,7 @@
       if (auto) {
         clearTimeout(G.restartTimer);
         G.restartTimer = setTimeout(() => {
-          if (G.state === 'over' && G.autoRestart && !G.paused) resetGame();
+          if (G.state === 'over' && G.autoRestart && !G.paused && !G.boardOpen) resetGame();
         }, delayFor(4200));
       }
       return;
@@ -2305,6 +2316,27 @@
     dom.sumHint.textContent = auto
       ? t('summary.nextAuto')
       : t('summary.hint');
+
+    // 人类赢下高分局：短促彩纸 + 程序化欢呼/铜管；147 加强。
+    const wp = G.players[winner];
+    const ws = G.stats[winner];
+    if (wp && wp.type === 'human' && ws && C.celebration) {
+      const best = ws.bestBreak || 0;
+      if (best >= 147) C.celebration.play('maximum');
+      else if (best >= 100 || G.scores[winner] >= 100) C.celebration.play('century');
+    }
+
+    // 人类赢局：稍等总结出现，再让玩家在排行榜里输入名字。
+    if (wp && wp.type === 'human' && ws) {
+      const offer = {
+        score: G.scores[winner], bestBreak: ws.bestBreak || 0,
+        timeMs: Math.max(1000, Date.now() - (G.frameStartedAt || Date.now())),
+      };
+      setTimeout(() => {
+        if (G.state === 'over' && G.summaryOpen && !G.boardOpen) openBoard(offer);
+      }, 1500);
+    }
+
     if (!ov.hidden) {
       // 已经是开着的（连打两局）：不重播动画，只换内容
       return;
@@ -2322,6 +2354,119 @@
     const done = () => { ov.hidden = true; };
     setTimeout(done, 220);
   }
+
+  // ================================================================
+  //  排行榜：最高分优先，同分用时短者靠前
+  // ================================================================
+  const BOARD_KEY = 'snk.leaderboard.v1';
+  const BOARD_NAME_KEY = 'snk.playerName';
+
+  function loadBoard() {
+    try {
+      const raw = localStorage.getItem(BOARD_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr.filter(e => e && typeof e.score === 'number') : [];
+    } catch (e) { return []; }
+  }
+
+  function sortBoard(entries) {
+    return entries.slice().sort((a, b) => {
+      if ((b.score || 0) !== (a.score || 0)) return (b.score || 0) - (a.score || 0);
+      return (a.timeMs || 0) - (b.timeMs || 0);
+    }).slice(0, 10);
+  }
+
+  function saveBoard(entries) {
+    const clean = sortBoard(entries);
+    try { localStorage.setItem(BOARD_KEY, JSON.stringify(clean)); } catch (e) { /* ignore */ }
+    refreshBoard3D(clean);
+    return clean;
+  }
+
+  function boardTime(ms) {
+    const s = Math.max(0, Math.round((Number(ms) || 0) / 1000));
+    const m = Math.floor(s / 60), r = s % 60;
+    return m + ':' + (r < 10 ? '0' : '') + r;
+  }
+
+  function refreshBoard3D(entries) {
+    if (R3D && R3D.setLeaderboard) R3D.setLeaderboard(entries || loadBoard(), t('board.title'));
+  }
+
+  function renderBoardRows(entries) {
+    if (!dom.boardBody) return;
+    dom.boardBody.innerHTML = '';
+    if (dom.boardEmpty) dom.boardEmpty.hidden = entries.length > 0;
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      const tr = document.createElement('tr');
+      if (i === 0) tr.className = 'top';
+      tr.innerHTML = '<td>' + (i + 1) + '</td><td></td><td></td><td></td><td></td>';
+      const cells = tr.children;
+      cells[1].textContent = e.name || 'Player';
+      cells[2].textContent = String(e.score || 0);
+      cells[3].textContent = boardTime(e.timeMs);
+      cells[4].textContent = String(e.bestBreak || 0);
+      dom.boardBody.appendChild(tr);
+    }
+  }
+
+  function openBoard(offer) {
+    if (!dom.boardOverlay) return;
+    const entries = loadBoard();
+    G.boardOffer = offer || null;
+    if (dom.boardTitle) dom.boardTitle.textContent = t('board.title');
+    if (dom.boardSub) dom.boardSub.textContent = t('board.sub');
+    if (dom.boardNameHead) dom.boardNameHead.textContent = t('board.name');
+    if (dom.boardScoreHead) dom.boardScoreHead.textContent = t('board.score');
+    if (dom.boardTimeHead) dom.boardTimeHead.textContent = t('board.time');
+    if (dom.boardBestHead) dom.boardBestHead.textContent = t('board.best');
+    if (dom.boardEntry) dom.boardEntry.hidden = !offer;
+    if (dom.boardName) dom.boardName.placeholder = t('board.placeholder');
+    if (offer && dom.boardName) {
+      let n = 'Player';
+      try { n = localStorage.getItem(BOARD_NAME_KEY) || 'Player'; } catch (e) { /* ignore */ }
+      dom.boardName.value = n;
+    }
+    renderBoardRows(entries);
+    dom.boardOverlay.hidden = false;
+    G.boardOpen = true;
+    requestAnimationFrame(() => dom.boardOverlay.classList.add('show'));
+  }
+
+  function closeBoard() {
+    if (!dom.boardOverlay || dom.boardOverlay.hidden) { G.boardOpen = false; return; }
+    dom.boardOverlay.classList.remove('show');
+    G.boardOpen = false;
+    setTimeout(() => { dom.boardOverlay.hidden = true; }, 220);
+  }
+
+  function commitBoardEntry() {
+    const offer = G.boardOffer;
+    if (!offer) return;
+    let name = (dom.boardName && dom.boardName.value || '').trim();
+    if (!name) name = 'Player';
+    name = name.slice(0, 12);
+    try { localStorage.setItem(BOARD_NAME_KEY, name); } catch (e) { /* ignore */ }
+    const entries = loadBoard();
+    entries.push({
+      name: name, score: offer.score || 0, bestBreak: offer.bestBreak || 0,
+      timeMs: offer.timeMs || 0, date: new Date().toISOString(),
+    });
+    const clean = saveBoard(entries);
+    renderBoardRows(clean);
+    G.boardOffer = null;
+    if (dom.boardEntry) dom.boardEntry.hidden = true;
+  }
+
+  if (dom.boardSave) dom.boardSave.addEventListener('click', commitBoardEntry);
+  if (dom.boardName) dom.boardName.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commitBoardEntry(); }
+  });
+  if (dom.boardClose) dom.boardClose.addEventListener('click', closeBoard);
+  if (dom.boardOverlay) dom.boardOverlay.addEventListener('click', (e) => {
+    if (e.target === dom.boardOverlay) closeBoard();
+  });
 
   // ================================================================
   //  AI 调度
@@ -2382,8 +2527,9 @@
     updatePowerDisplay();
     updateHUD();
 
-    const tag = d.kind === 'safety' ? 'Safety · ' : (d.kind === 'pot' ? 'Pot · ' : 'Shot · ');
-    showMsg(tag + (d.reason || 'AI shot'), '', 1600);
+    const tag = d.kind === 'safety' ? tr('Safety') + ' · '
+      : (d.kind === 'pot' ? tr('Pot') + ' · ' : tr('Shot') + ' · ');
+    showMsg(tag + (tr(d.reason || 'AI shot')), '', 1600);
 
     // 让玩家看清瞄准线和走位预览，再出杆
     setTimeout(() => {
@@ -3101,6 +3247,12 @@
     const isDrag = G.state === 'dragging' && G.cueBall.isOnTable();
     const isPlacing = G.state === 'placing' && G.cueBall.isOnTable();
 
+    // ---- 排行榜弹窗优先 ----
+    if (G.boardOpen) {
+      if (e.key === 'Escape') { e.preventDefault(); if (!e.repeat) closeBoard(); return; }
+      return;
+    }
+
     // ---- 结算弹窗开着时的快捷键（优先级最高：Esc 先关弹窗）----
     if (G.summaryOpen) {
       if (e.key === 'Escape') { e.preventDefault(); if (!e.repeat) hideSummary(); return; }
@@ -3257,19 +3409,26 @@
 
   // ---- 两个座位：各自独立选 Human / 任意一档 AI ----
   // 单一数据源：选项列表由 SNK.ai.LEVELS 生成，新增画像不用改 HTML。
-  const SEAT_OPTIONS = [['human', 'Human']].concat(
-    Object.keys(C.ai.LEVELS).map(k => [k, C.ai.LEVELS[k].name || k])
-  );
+  function seatOptions() {
+    return [['human', t('ui.human')]].concat(
+      Object.keys(C.ai.LEVELS).map(k => {
+        const p = C.ai.LEVELS[k] || {};
+        return [k, (I && I.lang === 'zh' && p.nameZh) ? p.nameZh : (p.name || k)];
+      })
+    );
+  }
 
   function fillSeatSelect(sel) {
     if (!sel) return;
+    const old = sel.value;
     sel.innerHTML = '';
-    for (const [val, text] of SEAT_OPTIONS) {
+    for (const [val, text] of seatOptions()) {
       const o = document.createElement('option');
       o.value = val;
       o.textContent = text;
       sel.appendChild(o);
     }
+    if (old) sel.value = old;
   }
   fillSeatSelect(dom.seatASelect);
   fillSeatSelect(dom.seatBSelect);
@@ -3616,7 +3775,7 @@
     const el = dom.spectateHint;
     if (!el) return;
     const txt = use3d
-      ? 'Idle a minute and the camera takes over · Drag to orbit · Wheel to zoom · C for the top view · H to hide the UI'
+      ? 'Drag to enter 3D · idle 1–1.5 min then slow orbit · Wheel to zoom · C for the top view · H to hide the UI'
       : 'Spectating (2D view) · H to hide the UI';
     el.textContent = tr(txt);
     el.classList.add('show');
@@ -3702,6 +3861,7 @@
     use3d = !use3d;
     R3D.on = use3d;
     canvas3d.style.display = use3d ? '' : 'none';
+    if (use3d) refreshBoard3D(loadBoard());
     if (dom.viewBtn) dom.viewBtn.textContent = viewBtnText();
     if (!use3d) {
       setOrbitView(false);                          // 2D 下没有镜头可转
@@ -3785,6 +3945,10 @@
   }
 
   if (canvas && R3D) {
+    // 右键/中键拖动 = 主动进入 3D 轨道。左键仍留给瞄准/击球。
+    canvas.addEventListener('contextmenu', e => {
+      if (use3d && R3D && R3D.available()) e.preventDefault();
+    });
     canvas.addEventListener('wheel', e => {
       if (!orbitEnabled()) return;
       e.preventDefault();
@@ -3792,9 +3956,25 @@
     }, { passive: false });
 
     canvas.addEventListener('pointerdown', e => {
+      // 普通对局里右键/中键按下才进 3D；不由时间自动切。
+      if (use3d && R3D && R3D.available() && !orbitEnabled() &&
+          (e.button === 2 || e.button === 1)) {
+        setOrbitView(true);
+        e.preventDefault();
+      }
       if (!orbitEnabled()) return;
+      // 3D 里点酒杯/吊灯/花瓶：只做轻微晃动，不启动镜头拖拽。
+      if (R3D.pokeObject && e.button === 0) {
+        const poked = R3D.pokeObject(e.clientX, e.clientY);
+        if (poked) {
+          if (poked === 'board') openBoard(null);
+          e.preventDefault();
+          return;
+        }
+      }
       orbitDrag = true;
-      orbitPanning = (e.button === 2) || e.shiftKey;
+      // 右键拖动 = 转镜头；Shift + 拖动 = 平移。
+      orbitPanning = e.shiftKey;
       orbitLX = e.clientX; orbitLY = e.clientY;
       document.body.classList.add('dragging');
       try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* 不支持就算了 */ }
@@ -3884,6 +4064,23 @@
     refreshAmbienceUI();
   }
 
+  // 画质：只影响阴影/像素比/浮尘；球和球桌几何始终高精度。
+  if (dom.qualitySelect && R3D && R3D.setQuality) {
+    let q = 'auto';
+    try { q = localStorage.getItem('snk.gfx') || 'auto'; } catch (e) { /* file:// 限制 */ }
+    if (['auto', 'low', 'medium', 'high'].indexOf(q) < 0) q = 'auto';
+    dom.qualitySelect.value = q;
+    R3D.setQuality(q);
+    dom.qualitySelect.addEventListener('change', () => {
+      const v = dom.qualitySelect.value;
+      R3D.setQuality(v);
+      try { localStorage.setItem('snk.gfx', v); } catch (e) { /* ignore */ }
+    });
+  }
+
+  // 墙上排行榜：启动时把本地记录画到 3D 黑板。
+  refreshBoard3D(loadBoard());
+
   // ================================================================
   //  辅助线模式：0 全无 / 1 只有母球 / 2 母球+第一颗碰到的球 / 3 所有动的球
   //  下拉与 G 键同步；选择写进 localStorage。
@@ -3934,9 +4131,35 @@
     }
   }
 
+  function setSelectTexts(sel, map) {
+    if (!sel) return;
+    for (const opt of sel.options) {
+      if (map[opt.value]) opt.textContent = t(map[opt.value]);
+    }
+  }
+
   function applyLanguage() {
     if (!I) return;
     if (dom.langSelect) dom.langSelect.value = I.lang;
+    fillSeatSelect(dom.seatASelect);
+    fillSeatSelect(dom.seatBSelect);
+    setSelectTexts(dom.speedSelect, {
+      0.5: 'speed.slow', 1: 'speed.normal', 2: 'speed.fast', 4: 'speed.turbo',
+    });
+    setSelectTexts(dom.modeSelect, {
+      restart: 'mode.restart', classic: 'mode.snooker', eightball: 'mode.eight',
+      nineball: 'mode.nine', clearance: 'mode.clearance', respottedBlack: 'mode.respotted',
+    });
+    setSelectTexts(dom.ambienceSelect, {
+      auto: 'amb.auto', match: 'amb.match', day: 'amb.day',
+      evening: 'amb.evening', night: 'amb.night',
+    });
+    setSelectTexts(dom.qualitySelect, {
+      auto: 'gfx.auto', low: 'gfx.low', medium: 'gfx.medium', high: 'gfx.high',
+    });
+    setSelectTexts($('guideSelect'), {
+      0: 'guide.off', 1: 'guide.cue', 2: 'guide.first', 3: 'guide.all',
+    });
     if (dom.breakWord) dom.breakWord.textContent = t('ui.break');
     if (dom.pauseBtn) dom.pauseBtn.textContent = G.paused ? t('ui.resume') : t('ui.pause');
     if (dom.saveMenuBtn) dom.saveMenuBtn.innerHTML = t('ui.saves') + ' &#9662;';
@@ -3952,6 +4175,7 @@
     if (dom.volRange) dom.volRange.title = t('ui.volume');
     if (dom.sumRematch) dom.sumRematch.textContent = t('summary.rematch');
     if (dom.sumClose) dom.sumClose.textContent = t('summary.close');
+    refreshBoard3D(loadBoard());
     if (dom.tutorialBtn) dom.tutorialBtn.textContent = t('ui.tutorial');
     if (dom.plannerBtn) dom.plannerBtn.textContent = t('ui.planner');
     if (G.plan) updatePlannerHud();

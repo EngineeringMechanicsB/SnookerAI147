@@ -102,7 +102,16 @@
       'ui.clearance': 'Clearance',
       'ui.respotted': 'Respotted black',
       'ui.turn': 'Turn',
-      'ui.thinking': 'Thinking…', 'ui.threads': 'threads', 'ui.paused': 'Paused',
+      'ui.thinking': 'Thinking…', 'ui.paused': 'Paused',
+      'speed.slow': 'Slow', 'speed.normal': 'Normal', 'speed.fast': 'Fast', 'speed.turbo': 'Turbo',
+      'mode.restart': 'Restart', 'mode.snooker': 'Snooker', 'mode.eight': '8-Ball',
+      'mode.nine': '9-Ball', 'mode.clearance': 'Clearance', 'mode.respotted': 'Respotted Black',
+      'amb.auto': 'Auto (real time)', 'amb.match': 'Match', 'amb.day': 'Day',
+      'amb.evening': 'Evening', 'amb.night': 'Night',
+      'gfx.auto': 'Quality: Auto', 'gfx.low': 'Quality: Low',
+      'gfx.medium': 'Quality: Medium', 'gfx.high': 'Quality: High',
+      'guide.off': 'Guide: Off', 'guide.cue': 'Guide: Cue',
+      'guide.first': 'Guide: Cue + First', 'guide.all': 'Guide: All',
       'turn.seatOn': 'Seat {seat} · on {ball}',
       'turn.eight': '8-Ball · Seat {seat} · {group}',
       'turn.nine': '9-Ball · Seat {seat} · on {ball}',
@@ -128,6 +137,9 @@
       'summary.nextAuto': 'Next frame starts automatically…',
       'summary.hint': 'Press R to rematch · Esc to close',
       'summary.rematch': 'Rematch', 'summary.close': 'Close',
+      'board.title': 'Leaderboard', 'board.sub': 'Highest score first · same score, faster time wins',
+      'board.name': 'Name', 'board.score': 'Score', 'board.time': 'Time', 'board.best': 'Best break',
+      'board.placeholder': 'Your name',
       'save.title': 'Saved games', 'save.empty': 'Empty', 'save.save': 'Save', 'save.load': 'Load',
       'save.export': 'Export save file…', 'save.import': 'Import save file…',
       'save.auto': 'Auto', 'save.slot': 'Slot {n}',
@@ -223,7 +235,16 @@
       'ui.clearance': '清彩',
       'ui.respotted': '复位黑球',
       'ui.turn': '回合',
-      'ui.thinking': '思考中…', 'ui.threads': '线程', 'ui.paused': '已暂停',
+      'ui.thinking': '思考中…', 'ui.paused': '已暂停',
+      'speed.slow': '慢', 'speed.normal': '正常', 'speed.fast': '快', 'speed.turbo': '极快',
+      'mode.restart': '重新开始', 'mode.snooker': '斯诺克', 'mode.eight': '8 球',
+      'mode.nine': '9 球', 'mode.clearance': '清彩', 'mode.respotted': '复位黑球',
+      'amb.auto': '自动（按现实时间）', 'amb.match': '比赛', 'amb.day': '白天',
+      'amb.evening': '傍晚', 'amb.night': '夜晚',
+      'gfx.auto': '画质：自动', 'gfx.low': '画质：低',
+      'gfx.medium': '画质：中', 'gfx.high': '画质：高',
+      'guide.off': '辅助线：关', 'guide.cue': '辅助线：母球',
+      'guide.first': '辅助线：母球 + 首触', 'guide.all': '辅助线：全部',
       'turn.seatOn': '座位 {seat} · 目标 {ball}',
       'turn.eight': '8 球 · 座位 {seat} · {group}',
       'turn.nine': '9 球 · 座位 {seat} · 目标 {ball}',
@@ -249,6 +270,9 @@
       'summary.nextAuto': '下一局将自动开始…',
       'summary.hint': '按 R 再来一局 · Esc 关闭',
       'summary.rematch': '再来一局', 'summary.close': '关闭',
+      'board.title': '排行榜', 'board.sub': '分数高者在前 · 同分用时短者在前',
+      'board.name': '名字', 'board.score': '分数', 'board.time': '用时', 'board.best': '最高单杆',
+      'board.placeholder': '输入名字',
       'save.title': '存档', 'save.empty': '空', 'save.save': '保存', 'save.load': '读取',
       'save.export': '导出存档…', 'save.import': '导入存档…',
       'save.auto': '自动', 'save.slot': '存档 {n}',
@@ -300,7 +324,6 @@
     'Half-century': '五十分杆',
     'Snookers required': '需要斯诺克',
     'Negative play': '消极球',
-    'Must score': '必须进球',
     'Game loaded': '读档成功',
     'Orbit view': '环绕视角',
     'Move mouse to aim · drag to look around · wheel zoom · Space/Shoot to play · C reset · Esc top view':
@@ -331,8 +354,8 @@
     'Centre': '中心', 'Top': '高杆', 'Bottom': '低杆', 'Left': '左塞', 'Right': '右塞',
     'Top + Right': '高杆 + 右塞', 'Top + Left': '高杆 + 左塞',
     'Bottom + Right': '低杆 + 右塞', 'Bottom + Left': '低杆 + 左塞',
-    'Idle a minute and the camera takes over · Drag to orbit · Wheel to zoom · C for the top view · H to hide the UI':
-      '闲置一分钟镜头会自动接管 · 拖动环绕 · 滚轮缩放 · C 回俯视 · H 隐藏界面',
+    'Drag to enter 3D · idle 1–1.5 min then slow orbit · Wheel to zoom · C for the top view · H to hide the UI':
+      '拖动进入 3D · 闲置 1~1.5 分钟后缓慢环绕 · 滚轮缩放 · C 回俯视 · H 隐藏界面',
     'Spectating (2D view) · H to hide the UI': '观战中（2D）· 按 H 隐藏界面',
     'Aim locked · click to move · wheel or ← → to fine-tune':
       '瞄准已锁定 · 点击解锁 · 滚轮或 ← → 微调',
@@ -346,6 +369,14 @@
     'Foul: no ball hit the cushion': '犯规：没有球碰库',
     'Foul: ball off the table': '犯规：球跳出台面',
     'Foul: push shot': '犯规：推杆',
+    'Safety': '防守', 'Pot': '进球', 'Shot': '出杆',
+    'Tight snooker · opponent must go off cushions': '严密斯诺克 · 对手只能撞库解',
+    'Nothing on · playing safe': '没有机会 · 打安全球',
+    'Risk too high · playing safe': '风险太高 · 打安全球',
+    'Break off · thin on the pack, cue ball away from the pack':
+      '开球 · 薄碰球堆，白球回开球区',
+    'No pot and no safe shot available': '没有进球线路，也没有安全球',
+    'AI shot': 'AI 出杆',
   };
 
   function dict() { return DICT[lang] || DICT.en; }
@@ -378,11 +409,28 @@
       return m[1] + ' 有机会打出 147——已得 ' + m[2] + '，台面剩 ' + m[3];
     if ((m = /^(.+) trails by (\d+) with (\d+) on the table$/.exec(text)))
       return m[1] + ' 落后 ' + m[2] + ' 分，台面还剩 ' + m[3] + ' 分';
-    if ((m = /^(.+) has gone three shots without a pot — forcing the attack$/.exec(text)))
-      return m[1] + ' 连续三杆没进球，开始强制进攻';
     if ((m = /^Scores level at (.+) — black respotted, first pot wins$/.exec(text)))
       return '比分 ' + m[1] + ' 打平，黑球复位，先打进者获胜';
     if ((m = /^(.+) · (\d+) away$/.exec(text))) return m[1] + ' · 罚 ' + m[2] + ' 分';
+
+    const zhBall = {
+      red: '红球', yellow: '黄球', green: '绿球', brown: '棕球',
+      blue: '蓝球', pink: '粉球', black: '黑球', white: '白球',
+      eight: '8 号球',
+    };
+    if ((m = /^Potting the (\w+)$/.exec(text)))
+      return '打进' + (zhBall[m[1]] || m[1]);
+    if ((m = /^Attacking · (\w+) for (\d+)$/.exec(text)))
+      return '进攻 · ' + (zhBall[m[1]] || m[1]) + ' ' + m[2] + ' 分';
+    if ((m = /^Chasing 147 · (\w+) for (\d+)$/.exec(text)))
+      return '追 147 · ' + (zhBall[m[1]] || m[1]) + ' ' + m[2] + ' 分';
+    if ((m = /^Legal correction · (.+)$/.exec(text)))
+      return '合法修正 · ' + tr(m[1]);
+    if ((m = /^Forced pot · (.+)$/.exec(text)))
+      return '强行进攻 · ' + (m[1] === 'attacking' ? '进攻' : m[1]);
+    if ((m = /^Banked pot$/.exec(text))) return '翻袋';
+    if ((m = /^Combination pot$/.exec(text))) return '组合球';
+    if ((m = /^Cushion-route pot$/.exec(text))) return '一库进球';
 
     if (text === 'No ball hit') return '空杆';
     if (text === 'Cue ball potted') return '白球落袋';

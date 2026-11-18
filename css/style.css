@@ -465,6 +465,22 @@ body.pool-mode .hud-break { display:none; }
 }
 .summary-hint { color:rgba(255,255,255,0.35); font-size:10.5px; margin-top:10px; min-height:13px; letter-spacing:0.4px; }
 
+/* ---------- 墙上排行榜 ---------- */
+.board-overlay { z-index:34; }
+.board-card { min-width:440px; max-width:min(92vw,600px); }
+.board-sub { color:rgba(255,255,255,0.45); font-size:11px; margin:4px 0 12px; }
+.board-entry { display:flex; gap:8px; justify-content:center; margin:0 0 12px; }
+.board-entry input {
+  width:180px; padding:7px 10px; border-radius:8px;
+  border:1px solid rgba(255,255,255,0.18);
+  background:rgba(0,0,0,0.28); color:#fff; font-size:13px;
+}
+.board-entry input:focus { outline:1px solid rgba(255,217,61,0.7); }
+.board-empty { color:rgba(255,255,255,0.38); font-size:12px; margin:8px 0 12px; }
+.board-table th, .board-table td { text-align:center; }
+.board-table td:first-child { color:rgba(255,255,255,0.38); }
+.board-table tr.top td { color:#ffd93d; font-weight:700; }
+
 /* ---------- 台面剩余球 ---------- */
 .ball-count {
   position:relative; z-index:1;
@@ -581,7 +597,7 @@ body.aim-locked canvas#gc { cursor:default; }
 .think-label {
   color:#9cc7ff; font-size:11px; letter-spacing:0.5px;
   opacity:0; transition:opacity 0.2s; white-space:nowrap;
-  /* 空字符串和 "Thinking… · 8 threads" 不能改变控制条宽度 */
+  /* 思考状态文字不能改变控制条宽度 */
   min-width:128px; text-align:center; display:inline-block;
 }
 .restart-btn {

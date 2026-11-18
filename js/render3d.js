@@ -49,6 +49,10 @@
   const RAIL_W = 12;           // 木框宽度（我们 28px 的库边带里，外侧 12px 是木头）
 
   let renderer = null, scene = null;
+  // 画质只调“渲染开销”：像素比、阴影贴图、环境粒子。
+  // 球和球桌的几何/材质不降级，始终保留高精度。
+  let qualityName = 'auto';
+  let qualityDust = true;
   // 两台相机、两套用途，永远只渲染其中一台：
   //   camOrtho  —— 正上方俯视正交。**手打时唯一使用的相机**：屏幕坐标 == 台面坐标，
   //                cpos() 和所有瞄准换算都建立在它上面，所以它的参数一个字都不能动。
@@ -60,7 +64,8 @@
   // ---------- 观战镜头状态机 ----------
   // 只有两个机位，但**什么时候用哪个**是有讲究的：
   //   ortho —— 正上方俯视（正交机）。观战一开始就是这个，每一局重开也回到这里。
-  //   persp —— 透视机（斜视）。用户自己拖出来，或者观战闲置够久后自动巡游飞过去。
+  //   persp —— 透视机（斜视）。**只有用户拖动/按 3D Orbit 才进入**；
+  //            进入后闲置 60~90 秒才缓慢自转。没有自动切 3D。
   // ⚠ 手打时**永远**是 ortho：屏幕坐标 == 台面坐标是 cpos() 和全部瞄准换算的地基。
   //   透视机只有在 spectating 且用户/巡游要它时才顶上。
   let spectating = false;               // 是否处于观战（两边都是 AI）
@@ -70,7 +75,13 @@
   let cineFollow = false, cineFollowT = 6;
   let orbDamp = 0.0015;                 // 相机阻尼底数；飞入时临时放慢（见 updateOrb）
   let idleSince = 0;                    // 最近一次用户操作的时刻
-  const CINE_IDLE_MS = 60000;           // 观战时闲置多久自动切侧视巡游（1 分钟）
+  // 自动缓慢旋转只在用户已经进入 3D 轨道后发生。等待 60~90 秒随机，
+  // 不固定一分钟，避免每局都在同一时刻“动起来”。
+  const CINE_IDLE_MIN = 60000, CINE_IDLE_MAX = 90000;
+  let cineDelayMs = CINE_IDLE_MIN + Math.random() * (CINE_IDLE_MAX - CINE_IDLE_MIN);
+  function rollCineDelay() {
+    cineDelayMs = CINE_IDLE_MIN + Math.random() * (CINE_IDLE_MAX - CINE_IDLE_MIN);
+  }
   const perfNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
   // 三盏吊灯里"看得见的那部分"（吊绳/灯罩/发光面片）各自的 Group。
@@ -89,6 +100,8 @@
   let neonSign = null, neonLight = null, neonBase = 0.22;
   let dust = null, dustData = null;
   let clockFace = null;                 // 会走的挂钟：canvas + texture + 上次秒数
+  let leaderboardMesh = null, leaderboardCanvas = null, leaderboardTex = null;
+  let leaderboardEntries = [];
   const ceilingVis = [];                // 天花横梁：俯视正交下会压在台面上，必须藏
 
   // ---------- 生活细节（第十四轮）----------
@@ -107,6 +120,9 @@
   const chalkMeshes = [];               // 库边粉块：{group, top}
   const chalkMatCache = {};
   let chalkBaseMat = null;
+  // 3D 可点击物件：酒杯 / 吊灯 / 花瓶。只做轻微晃动，不影响物理。
+  const interactables = [];
+  const pokeAnims = [];
 
   // ---------- 球桌细节：包金、袋口铜圈、回球轨道 ----------
   let returnRoot = null;
@@ -121,9 +137,9 @@
   // 球坐标：az 绕 Y 轴方位角、pol 极角（0 = 正上方）、dist 距离。
   // cur 是**实际**值、tgt 是**目标**值，每帧按帧率无关的阻尼逼近（见 render）。
   const ORB_LIMIT = { polMin: 0.10, polMax: 1.35, distMin: 900, distMax: 3400 };
-  // 默认轨道机位偏"坐在吧台边看球桌"：极角大一点（相机压低），
-  // 画面里才带得到墙面、吊灯和吧台；原来的 0.62 几乎只能俯看台面。
-  const ORB_DEFAULTS = { az: -1.18, pol: 1.22, dist: 2350, tx: 0, ty: 0, tz: 0 };
+  // 默认轨道机位：比旧版更近、更偏俯视。旧值 pol 1.22 / dist 2350
+  // 相机压得太低且退得太远，经常把墙/家具带进画面，球台反而看不清。
+  const ORB_DEFAULTS = { az: -1.18, pol: 1.00, dist: 1800, tx: 0, ty: 0, tz: 0 };
   const orb = {
     cur: Object.assign({}, ORB_DEFAULTS),
     tgt: Object.assign({}, ORB_DEFAULTS),
@@ -934,6 +950,7 @@
   };
   const AMB_KEYS = ['auto', 'match', 'day', 'evening', 'night'];
   let ambName = 'match';
+  let starField = null;
   let autoApplied = null;
   let lastAutoCheck = 0;
 
@@ -981,6 +998,7 @@
       R.glow.color.setHex(a.glow[0]); R.glow.intensity = a.glow[1];
       if (R.room) R.room.intensity = a.room;
       if (R.pane) { R.pane.material.color.setHex(a.pane[0]); R.pane.material.opacity = a.pane[1]; }
+      if (starField) starField.visible = eff === 'night';
       for (let i = 0; i < lampLights.length; i++) {
         lampLights[i].color.setHex(a.lamp[0]);
         lampLights[i].intensity = a.lamp[1];
@@ -1383,8 +1401,9 @@
     art(wallHX - 12, floorY + 980, 1350, -Math.PI / 2, 340, 260, 2, false);
     art(-wallHX + 12, floorY + 980, 1350, Math.PI / 2, 300, 380, 1, true);
 
-    // 挂钟：+X 墙靠后
+    // 挂钟：+X 墙靠后；旁边是排行榜黑板
     makeClock(wallHX - 12, floorY + 1120, -1980, -Math.PI / 2);
+    makeLeaderboard(wallHX - 12, floorY + 1120, -2380, -Math.PI / 2);
     // 飞镖盘：台球厅的常见墙面装饰，也打破一整片灰泥
     makeDartboard(wallHX - 12, floorY + 1120, 1700, -Math.PI / 2);
   }
@@ -1508,6 +1527,87 @@
     ggroup.position.set(x, y, z);
     ggroup.rotation.y = ry;
     scene.add(ggroup);
+  }
+
+  // ----------------------------------------------------------------
+  //  墙上排行榜：时钟旁边的一块黑板，点击打开完整榜单。
+  // ----------------------------------------------------------------
+  function drawLeaderboard(entries, title) {
+    if (!leaderboardCanvas) return;
+    const g = leaderboardCanvas.getContext('2d');
+    const w = leaderboardCanvas.width, h = leaderboardCanvas.height;
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = '#120e0a';
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#8a6a32';
+    g.lineWidth = 8;
+    g.strokeRect(4, 4, w - 8, h - 8);
+    g.fillStyle = '#ffd93d';
+    g.font = '700 28px Arial, sans-serif';
+    g.textAlign = 'center';
+    g.fillText(title || 'LEADERBOARD', w / 2, 42);
+    g.strokeStyle = 'rgba(255,217,61,0.35)';
+    g.lineWidth = 2;
+    g.beginPath(); g.moveTo(24, 56); g.lineTo(w - 24, 56); g.stroke();
+
+    g.textAlign = 'left';
+    g.font = '18px Arial, sans-serif';
+    const rows = entries || [];
+    if (!rows.length) {
+      g.fillStyle = 'rgba(255,255,255,0.55)';
+      g.textAlign = 'center';
+      g.fillText('No records yet', w / 2, h / 2);
+    } else {
+      for (let i = 0; i < Math.min(8, rows.length); i++) {
+        const e = rows[i];
+        const y = 88 + i * 31;
+        g.fillStyle = i === 0 ? '#ffd93d' : 'rgba(255,255,255,0.78)';
+        g.fillText((i + 1) + '.', 26, y);
+        g.fillStyle = i === 0 ? '#fff3c4' : 'rgba(255,255,255,0.86)';
+        g.fillText(String(e.name || 'Player').slice(0, 12), 52, y);
+        g.textAlign = 'right';
+        g.fillStyle = i === 0 ? '#ffd93d' : 'rgba(255,255,255,0.72)';
+        g.fillText(String(e.score || 0), w - 118, y);
+        g.fillStyle = 'rgba(255,255,255,0.50)';
+        g.fillText(formatBoardTime(e.timeMs), w - 26, y);
+        g.textAlign = 'left';
+      }
+    }
+    if (leaderboardTex) leaderboardTex.needsUpdate = true;
+  }
+
+  function formatBoardTime(ms) {
+    const sec = Math.max(0, Math.round((Number(ms) || 0) / 1000));
+    const m = Math.floor(sec / 60), s = sec % 60;
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  function makeLeaderboard(x, y, z, ry) {
+    const cv = document.createElement('canvas');
+    cv.width = 512; cv.height = 360;
+    leaderboardCanvas = cv;
+    leaderboardTex = new THREE.CanvasTexture(cv);
+    leaderboardTex.encoding = THREE.sRGBEncoding;
+    drawLeaderboard(leaderboardEntries, 'LEADERBOARD');
+
+    const group = new THREE.Group();
+    const frame = new THREE.Mesh(
+      new THREE.BoxGeometry(380, 268, 14),
+      new THREE.MeshStandardMaterial({ color: 0x3a2416, roughness: 0.62, metalness: 0.08 })
+    );
+    frame.castShadow = true;
+    group.add(frame);
+    const face = new THREE.Mesh(
+      new THREE.PlaneGeometry(360, 250),
+      new THREE.MeshStandardMaterial({ map: leaderboardTex, roughness: 0.88 })
+    );
+    face.position.z = 8;
+    group.add(face);
+    group.position.set(x, y, z);
+    group.rotation.y = ry;
+    scene.add(group);
+    leaderboardMesh = group;
+    registerInteractable(group, 'board');
   }
 
   // 墙上的球杆架：三根竖放的杆 + 黄铜托
@@ -1813,16 +1913,17 @@
         .map(p => new THREE.Vector2(p[0], p[1])), 18
     );
     function makeGlass(x, y, z, s) {
+      const group = new THREE.Group();
+      group.position.set(x, y, z);
+      group.scale.setScalar(s || 1);
       const g = new THREE.Mesh(glassGeo, glassMat);
-      g.position.set(x, y, z);
-      g.scale.setScalar(s || 1);
       g.renderOrder = 3;
-      scene.add(g);
+      group.add(g);
       const w = new THREE.Mesh(wineGeo, wineMat);
-      w.position.copy(g.position);
-      w.scale.copy(g.scale);
       w.renderOrder = 2;
-      scene.add(w);
+      group.add(w);
+      scene.add(group);
+      registerInteractable(group, 'glass');
     }
 
     // 三种瓶型：葡萄酒瓶（高肩）、烈酒瓶（方肩短颈）、啤酒瓶（细长）
@@ -1910,7 +2011,9 @@
     const vaseMat = new THREE.MeshStandardMaterial({
       color: 0x6f9a86, roughness: 0.35, metalness: 0.15,
     });
-    add(new THREE.Mesh(new THREE.LatheGeometry(vaseProfile, 28), vaseMat), tx, topY + 9, tz);
+    const vase = add(new THREE.Mesh(new THREE.LatheGeometry(vaseProfile, 28), vaseMat),
+      tx, topY + 9, tz);
+    registerInteractable(vase, 'vase');
 
     // 花：几根细茎 + 小花头
     const stemMat = new THREE.MeshStandardMaterial({ color: 0x3a6b3a, roughness: 0.8 });
@@ -2349,12 +2452,34 @@
     // 玻璃：法线朝 +X（房间内侧）
     const pane = new THREE.Mesh(
       new THREE.PlaneGeometry(ww, wh),
-      new THREE.MeshBasicMaterial({ color: 0xdfe8ff, transparent: true, opacity: 0.75 })
+      new THREE.MeshBasicMaterial({
+        color: 0xdfe8ff, transparent: true, opacity: 0.75, depthWrite: false,
+      })
     );
     pane.rotation.y = Math.PI / 2;
     pane.position.set(wx + 8, cy, 0);
     scene.add(pane);
     ambRefs.pane = pane;
+
+    // 夜空星点：窗洞外的一块点云，只在 Night 显示。
+    const starN = 180;
+    const starGeo = new THREE.BufferGeometry();
+    const starPos = new Float32Array(starN * 3);
+    for (let i = 0; i < starN; i++) {
+      starPos[i * 3] = wx - 260 - Math.random() * 340;
+      starPos[i * 3 + 1] = sillY + 20 + Math.random() * (wh - 30);
+      starPos[i * 3 + 2] = (Math.random() * 2 - 1) * (ww / 2 - 30);
+    }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    starField = new THREE.Points(
+      starGeo,
+      new THREE.PointsMaterial({
+        color: 0xdbe8ff, size: 2.4, transparent: true, opacity: 0.72,
+        depthWrite: false, sizeAttenuation: false,
+      })
+    );
+    starField.visible = false;
+    scene.add(starField);
   }
 
   // 一盏吊灯 = 吊绳 + 锥形灯罩 + 朝下的发光面片 + 一盏不投影的 SpotLight。
@@ -2431,6 +2556,7 @@
     g.add(lamp.target);
 
     scene.add(g);
+    registerInteractable(g, 'lamp');
   }
 
   // ================================================================
@@ -2671,6 +2797,40 @@
   const pickNdc = new THREE.Vector2();
   const pickHit = new THREE.Vector3();
 
+  function registerInteractable(obj, kind) {
+    if (!obj) return obj;
+    obj.userData.interact = kind;
+    interactables.push(obj);
+    return obj;
+  }
+
+  // 3D 模式下点击酒杯/吊灯/花瓶：射线找最近物件，返回类型给 main.js。
+  function pokeObject(clientX, clientY) {
+    if (!renderer || !camPersp || !perspCam) return null;
+    const rect = renderer.domElement.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    pickNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    pickNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    const cam = (shotCam.w > 0.001 && camBlend) ? camBlend : camPersp;
+    pickRay.setFromCamera(pickNdc, cam);
+    const hits = pickRay.intersectObjects(interactables, true);
+    if (!hits || !hits.length) return null;
+    let obj = hits[0].object;
+    while (obj && !obj.userData.interact) obj = obj.parent;
+    if (!obj) return null;
+    if (obj.userData.interact === 'board') return 'board';
+    // 同一个物件连点：重置计时，不叠加。
+    for (let i = pokeAnims.length - 1; i >= 0; i--) {
+      if (pokeAnims[i].obj === obj) pokeAnims.splice(i, 1);
+    }
+    pokeAnims.push({
+      obj: obj, t: 0, last: perfNow(),
+      baseX: obj.rotation.x, baseZ: obj.rotation.z,
+      amp: obj.userData.interact === 'lamp' ? 0.035 : 0.10,
+    });
+    return obj.userData.interact;
+  }
+
   function pickTable(clientX, clientY) {
     if (!renderer || !camPersp) return null;
     const rect = renderer.domElement.getBoundingClientRect();
@@ -2685,6 +2845,58 @@
     if (!hit) return null;                     // 射线与台面平行（理论上不会）
     return { x: hit.x + W / 2, y: hit.z + H / 2 };
   }
+
+  // ================================================================
+  //  画质
+  //  低档只压阴影/像素比/浮尘，不压球和桌面的几何精度。
+  // ================================================================
+  function autoQuality() {
+    const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4;
+    const mem = (typeof navigator !== 'undefined' && navigator.deviceMemory) || 4;
+    if (cores <= 4 || mem <= 4) return 'low';
+    if (cores <= 8 || mem <= 8) return 'medium';
+    return 'high';
+  }
+
+  function qualityPreset(name) {
+    const eff = name === 'auto' ? autoQuality() : name;
+    if (eff === 'low') return { pixel: 1.0, sunShadow: 512, lampShadow: 512, dust: false };
+    if (eff === 'medium') return { pixel: 1.5, sunShadow: 1024, lampShadow: 768, dust: true };
+    return { pixel: 2.0, sunShadow: 2048, lampShadow: 1024, dust: true };
+  }
+
+  function resizeShadow(light, size) {
+    if (!light || !light.shadow) return;
+    if (light.shadow.mapSize.x === size && light.shadow.mapSize.y === size) return;
+    light.shadow.mapSize.width = size;
+    light.shadow.mapSize.height = size;
+    if (light.shadow.map) {
+      try { light.shadow.map.dispose(); } catch (e) { /* ignore */ }
+      light.shadow.map = null;
+    }
+  }
+
+  function applyQuality(name) {
+    qualityName = name || 'auto';
+    const p = qualityPreset(qualityName);
+    qualityDust = p.dust;
+    if (renderer) {
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, p.pixel));
+      renderer.shadowMap.enabled = true;
+      if (renderer.shadowMap.needsUpdate !== undefined) renderer.shadowMap.needsUpdate = true;
+    }
+    if (ambRefs.sun) resizeShadow(ambRefs.sun, p.sunShadow);
+    for (let i = 0; i < lampLights.length; i++) {
+      resizeShadow(lampLights[i], p.lampShadow);
+    }
+    if (dust) dust.visible = qualityDust && lampVisOn;
+  }
+
+  function setQuality(name) {
+    applyQuality(name);
+  }
+
+  function quality() { return qualityName; }
 
   // ================================================================
   //  初始化
@@ -2790,6 +3002,7 @@
 
     ready = true;
     applyAmbience(ambName, true);
+    applyQuality(qualityName);
   }
 
   // ================================================================
@@ -2804,7 +3017,7 @@
 
   // 进入/退出观战。**进入时给的是俯视位（正交机）**，不是斜视：
   //   用户的原话是"进入对战默认是俯视图，而非侧视图"。
-  //   斜视（透视巡游）是"没人管这局的时候"才自动飞过去的，见 updateCamera。
+  //   斜视只在用户拖动/按 3D Orbit 后出现；闲置 60~90 秒才缓慢自转。
   function setSpectate(on) {
     on = !!on;
     if (on === spectating) return;
@@ -2822,6 +3035,8 @@
     if (on === manualOrbit) return;
     manualOrbit = on;
     cineOn = false;
+    idleSince = perfNow();
+    rollCineDelay();
     if (on) {
       orbDamp = 0.20;             // 约 1~2 秒飞到位，之后恢复跟手
       const d = ORB_DEFAULTS;
@@ -2845,6 +3060,7 @@
     cineOn = false;
     orbDamp = 0.0015;
     idleSince = perfNow();
+    rollCineDelay();
     // 顺手把透视机也摆到俯视位：用户接下来一拖动，就是从俯视平滑接管的
     const d = ORB_DEFAULTS;
     orb.cur = { az: d.az, pol: ORB_TOP.pol, dist: ORB_TOP.dist, tx: 0, ty: 0, tz: 0 };
@@ -2856,6 +3072,8 @@
   function userControl() {
     if (!spectating) {
       if (!manualOrbit) return false;
+      idleSince = perfNow();
+      cineOn = false;
       orbDamp = 0.0015;
       perspCam = true;
       return true;
@@ -2879,17 +3097,16 @@
     if (cineOn) { cineOn = false; orbDamp = 0.0015; }
   }
 
-  // 闲置够久 → 自动巡游：平滑飞到斜视机位，之后缓慢自转 + 偶尔跟球。
+  // 进入 3D 轨道后闲置够久 → 从当前机位开始缓慢自转/偶尔跟球。
+  // 不再从正交俯视自动“飞进”3D：没有用户拖动/按钮，镜头保持俯视。
   function startCine() {
-    if (!spectating) return;
+    if (!spectating && !manualOrbit) return;
+    if (!perspCam) return;
     cineOn = true;
-    orbDamp = 0.30;                      // 阻尼放慢 → 约 3 秒飞到位（到位后自动恢复跟手）
+    orbDamp = 0.0015;                    // 不重置机位，只接管缓慢旋转
     cineFollow = false;
     cineFollowT = 5 + Math.random() * 4;
-    perspCam = true;
-    const d = ORB_DEFAULTS;
-    orb.cur = { az: d.az, pol: ORB_TOP.pol, dist: ORB_TOP.dist, tx: 0, ty: 0, tz: 0 };
-    orb.tgt = { az: d.az, pol: d.pol, dist: d.dist, tx: d.tx, ty: d.ty, tz: d.tz };
+    rollCineDelay();
   }
 
   function orbitDrag(dx, dy) {
@@ -2966,20 +3183,21 @@
     camPersp.lookAt(c.tx, c.ty, c.tz);
   }
 
-  // 观战镜头每帧的调度：
-  //   闲置够久 → 起飞巡游（startCine 一开，updateOrb 的阻尼会把它"飞"过去）
-  //   巡游中   → 缓慢自转 + 偶尔把视点挪到白球上（跟球）
-  //   都不是   → 正交俯视，什么都不做
+  // 镜头每帧的调度：
+  //   没有 3D 轨道（正交俯视） → 什么都不做，绝不自动切 3D；
+  //   用户已进入 3D 轨道         → 闲置 60~90 秒后缓慢自转 + 偶尔跟球；
+  //   用户拖拽/滚轮              → 立即打断自动旋转，镜头跟手。
   function updateCamera(dt, balls) {
-    if (!spectating) {
-      // 主动轨道视角：只跑相机阻尼，没有巡游/跟球
-      if (!manualOrbit) { perspCam = false; return; }
-      perspCam = true;
-      updateOrb(dt);
+    // 透视机只由两种方式启用：用户按 3D Orbit，或用户拖动观战镜头。
+    // 没有用户动作时，正交俯视保持不动，不会自动“切进 3D”。
+    if (!spectating && !manualOrbit) {
+      perspCam = false;
       return;
     }
-    if (!cineOn && (perfNow() - idleSince) > CINE_IDLE_MS) startCine();
+    if (!spectating) perspCam = true;
     if (!perspCam) return;
+
+    if (!cineOn && (perfNow() - idleSince) > cineDelayMs) startCine();
 
     if (cineOn) {
       orb.tgt.az += 0.05 * dt;                 // 缓慢自转 ≈ 2.9°/秒
@@ -3194,6 +3412,10 @@
                                     + Math.sin(t * 23.3 + f.phase * 1.9) * f.amp * 0.5);
     }
 
+    if (starField) {
+      starField.material.opacity = 0.58 + Math.sin(t * 1.35) * 0.12 + Math.sin(t * 3.7) * 0.04;
+    }
+
     if (neonSign) {
       const k = 0.90 + Math.sin(t * 2.1) * 0.05 + Math.sin(t * 7.7) * 0.025;
       neonSign.material.opacity = Math.min(1, k);
@@ -3206,6 +3428,22 @@
       const b = plantBlades[i];
       b.m.rotation.z = b.lean + Math.sin(t * 1.15 + b.phase) * b.amp;
       b.m.rotation.x = Math.cos(t * 0.83 + b.phase * 1.4) * b.amp * 0.65;
+    }
+
+    // 点击物件后的短促晃动：酒杯/吊灯/花瓶。指数衰减，1.4 秒内消失。
+    for (let i = pokeAnims.length - 1; i >= 0; i--) {
+      const p = pokeAnims[i];
+      p.t += (now - p.last) / 1000;
+      p.last = now;
+      const k = Math.exp(-p.t * 3.4);
+      if (p.t > 1.4 || k < 0.004) {
+        p.obj.rotation.x = p.baseX;
+        p.obj.rotation.z = p.baseZ;
+        pokeAnims.splice(i, 1);
+        continue;
+      }
+      p.obj.rotation.z = p.baseZ + Math.sin(p.t * 34) * p.amp * k;
+      p.obj.rotation.x = p.baseX + Math.cos(p.t * 27 + 0.4) * p.amp * 0.55 * k;
     }
 
     // 蜡烛火苗：纵向呼吸 + 轻微左右摇
@@ -3743,7 +3981,7 @@
       for (let i = 0; i < lampVis.length; i++) lampVis[i].visible = lampVisOn;
       // 横梁和浮尘同理：正交俯视时它们会像脏东西一样压在台呢上。
       for (let i = 0; i < ceilingVis.length; i++) ceilingVis[i].visible = lampVisOn;
-      if (dust) dust.visible = lampVisOn;
+      if (dust) dust.visible = lampVisOn && qualityDust;
     }
 
     updateAmbient(perfNow());
@@ -3757,12 +3995,19 @@
     on: false,
     init: init,
     render: render,
+    setQuality: setQuality,
+    quality: quality,
+    setLeaderboard: function (entries, title) {
+      leaderboardEntries = (entries || []).slice(0, 8);
+      drawLeaderboard(leaderboardEntries, title);
+    },
     // ---- 观战镜头（主循环只在观战时调用）----
     setSpectate: setSpectate,
     spectating: function () { return spectating; },
     setOrbit: setOrbit,
     orbitActive: orbitActive,
     pickTable: pickTable,
+    pokeObject: pokeObject,
     resetView: resetView,
     notifyActivity: notifyActivity,
     orbitDrag: orbitDrag,
@@ -3772,6 +4017,9 @@
     orbitNudge: orbitNudge,
     // ---- 光照氛围 ----
     ambience: function () { return ambName; },
+    effectiveAmbience: function () {
+      return ambName === 'auto' ? (autoApplied || autoPreset()) : ambName;
+    },
     ambienceKeys: function () { return AMB_KEYS.slice(); },
     setAmbience: function (name) { applyAmbience(name, true); },
     onAmbience: function (fn) { if (typeof fn === 'function') ambListeners.push(fn); },

@@ -77,6 +77,14 @@
       <option value="night">Night</option>
     </select>
 
+    <!-- 画质：只影响阴影分辨率/像素比/环境粒子；球和球桌几何始终高精度。 -->
+    <select class="mode-select" id="qualitySelect" title="Graphics quality">
+      <option value="auto" selected>Quality: Auto</option>
+      <option value="low">Quality: Low</option>
+      <option value="medium">Quality: Medium</option>
+      <option value="high">Quality: High</option>
+    </select>
+
     <!-- 声音：全部由 Web Audio 实时合成，项目里没有任何音频文件。
          浏览器要求先有一次用户操作才允许出声，没起来的时候按钮显示
          "Sound: click to enable"。 -->
@@ -230,6 +238,26 @@
     </div>
   </div>
 
+  <!-- 墙上排行榜的完整视图：3D 里点黑板打开；赢得一局也可以直接录入名字 -->
+  <div class="summary-overlay board-overlay" id="boardOverlay" hidden>
+    <div class="summary-card board-card">
+      <div class="summary-title" id="boardTitle">Leaderboard</div>
+      <div class="board-sub" id="boardSub">Fastest high scores win.</div>
+      <div class="board-entry" id="boardEntry" hidden>
+        <input id="boardName" maxlength="12" autocomplete="off" placeholder="Your name">
+        <button class="restart-btn primary" id="boardSave">Save</button>
+      </div>
+      <div class="board-empty" id="boardEmpty">No records yet</div>
+      <table class="summary-table board-table">
+        <thead><tr><th>#</th><th id="boardNameHead">Name</th><th id="boardScoreHead">Score</th><th id="boardTimeHead">Time</th><th id="boardBestHead">Best</th></tr></thead>
+        <tbody id="boardBody"></tbody>
+      </table>
+      <div class="summary-actions">
+        <button class="restart-btn" id="boardClose">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div class="tutorial-overlay" id="tutorialOverlay" hidden>
     <div class="tutorial-panel">
       <div class="tutorial-head">
@@ -311,6 +339,7 @@
 <script src="vendor/three.min.js"></script>
 <script src="js/render3d.js"></script>
 <script src="js/bgm.js"></script>
+<script src="js/celebration.js"></script>
 <script src="js/save.js"></script>
 <script src="js/i18n.js"></script>
 <script src="js/chatter.js"></script>

@@ -37,7 +37,8 @@ js/
   ai-pool.js            AI 搜索的 Web Worker 线程池
   render.js             2D 俯视渲染
   render3d.js           three.js 场景与 3D 渲染
-  bgm.js                Web Audio 音乐、音效、环境声
+  bgm.js                Web Audio 音乐、音效、环境声、胜利欢呼
+  celebration.js        胜利彩纸 Canvas 效果
   save.js               存档序列化与 localStorage
   i18n.js               中英文界面与球名
   chatter.js            球员性格对话
@@ -56,7 +57,7 @@ docs/                   本套开发文档
 ```text
 constants → cueclear → physics → rules → sim → planner
 → ai-style → ai → ai-pool → render → three.js → render3d
-→ bgm → save → i18n → chatter → tutorial → main → selftest
+→ bgm → celebration → save → i18n → chatter → tutorial → main → selftest
 ```
 
 原因：

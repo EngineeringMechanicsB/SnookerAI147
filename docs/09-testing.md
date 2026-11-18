@@ -166,7 +166,35 @@ $url = "file:///C:/.../SnookerAI147/index.html?selftest=1"
 一个简单测试页加载 `constants → ... → ai-style → ai → ai-pool`，构造贴袋口
 黑球，调用 `SNK.aiPool.decide(...)`，检查返回 `kind === 'pot'`。
 
-## 6. 调试 AI 决策
+## 6. UI / 3D 功能冒烟测试
+
+临时把 `index.html` 复制成根目录测试页，在 `</body>` 前插一段脚本，等主循环
+启动后调用公开接口，再把结果写进 `data-test`：
+
+```js
+SNK.celebration.play('maximum');
+SNK.render3d.setQuality('low');
+SNK.render3d.setLeaderboard([{ name: 'Test', score: 147, timeMs: 65000 }], '排行榜');
+SNK.render3d.setOrbit(true);
+document.getElementById('langSelect').value = 'zh';
+document.getElementById('langSelect').dispatchEvent(new Event('change'));
+document.body.setAttribute('data-test', '...');
+```
+
+测试页只用于本地，确认后删除，不提交。它能覆盖：彩纸 Canvas、画质切换、
+3D 黑板文字、中文选座/选项、镜头接口不抛异常。
+
+排行榜录入流程可以再测试：
+
+```js
+SNK.game.G.state = 'over';
+SNK.game.G.scores[0] = 120;
+SNK.game.G.stats[0].bestBreak = 105;
+SNK.game.showSummary(0, false);
+// 1.5 秒后 boardOverlay 打开，填名字并点击 boardSave
+```
+
+## 7. 调试 AI 决策
 
 看一杆为什么被选中，建议临时输出：
 
@@ -186,7 +214,7 @@ $url = "file:///C:/.../SnookerAI147/index.html?selftest=1"
 - `styleScore` 因为 `value/world` 缺失被算成 0；
 - 防守比较阈值过高/过低。
 
-## 7. 调试 UI
+## 8. 调试 UI
 
 - 用 `?selftest=1` 先确认游戏能跑。
 - 打开 DevTools，看 `Uncaught` 和 `SNK` 是否完整。
@@ -194,7 +222,7 @@ $url = "file:///C:/.../SnookerAI147/index.html?selftest=1"
 - 检查 Canvas 尺寸：CSS 尺寸和逻辑 1416×736 的换算。
 - 3D 问题先切回俯视正交，确认球位对不对，再看轨道相机。
 
-## 8. 回归清单
+## 9. 回归清单
 
 每次改 AI/物理/UI 后：
 
@@ -207,7 +235,7 @@ $url = "file:///C:/.../SnookerAI147/index.html?selftest=1"
 7. Worker：控制台无 `SNK.aiStyle is undefined`。
 8. 听声音：击球轻/重有明显区别，碰撞不连续爆音。
 
-## 9. 测试的边界
+## 10. 测试的边界
 
 - 自检只覆盖随机经典局面，不覆盖所有 8 球/9 球规则组合。
 - 无头对局用虚拟时钟，和浏览器真实预算下的结果可能不同。

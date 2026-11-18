@@ -753,14 +753,63 @@
     src.start(t); src.stop(t + dur + 0.05);
   }
 
+  // 鸟叫：几声高频短啁啾，频率快速上滑/下滑。
+  function synthBird(t, dest) {
+    const n = 2 + ((Math.random() * 4) | 0);
+    for (let i = 0; i < n; i++) {
+      const tt = t + i * (0.12 + Math.random() * 0.18) + Math.random() * 0.08;
+      const base = 1900 + Math.random() * 1800;
+      const dur = 0.055 + Math.random() * 0.08;
+      const o = osc('sine', base, tt, tt + dur + 0.02);
+      o.frequency.linearRampToValueAtTime(base * (1.12 + Math.random() * 0.35), tt + dur * 0.65);
+      o.frequency.linearRampToValueAtTime(base * (0.78 + Math.random() * 0.18), tt + dur);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, tt);
+      g.gain.linearRampToValueAtTime(0.020 + Math.random() * 0.014, tt + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, tt + dur);
+      o.connect(g); g.connect(dest);
+    }
+  }
+
+  // 虫鸣：高频带通噪声的短脉冲，夜里偶尔响一阵。
+  function synthInsects(t, dest) {
+    const dur = 1.4 + Math.random() * 1.4;
+    const src = noiseSource(whiteNoise(), false);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 4600 + Math.random() * 1400;
+    bp.Q.value = 7;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    for (let i = 0; i < 16; i++) {
+      const tt = t + (i / 16) * dur + Math.random() * 0.02;
+      g.gain.setValueAtTime(0.0001, tt);
+      g.gain.linearRampToValueAtTime(0.006 + Math.random() * 0.004, tt + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.028);
+    }
+    src.connect(bp); bp.connect(g); g.connect(dest);
+    src.start(t); src.stop(t + dur + 0.05);
+  }
+
   function playAmbientOneShot() {
     if (!ensureCtx() || !S.on || ducked || !unlocked) return;
     if (!ambBuilt) buildAmbience();
     const t = ctx.currentTime + 0.05;
     const dest = ambientPan() || ambBus;
     const r = Math.random();
+    const eff = (SNK.render3d && SNK.render3d.effectiveAmbience)
+      ? SNK.render3d.effectiveAmbience() : 'match';
     try {
-      if (r < 0.12) synthHorn(t, dest);           // 远处长喇叭
+      if (eff === 'day') {
+        if (r < 0.34) synthBird(t, dest);
+        else if (r < 0.62) synthMurmur(t, dest);
+        else if (r < 0.82) synthTraffic(t);
+        else synthHornShort(t, dest);
+      } else if (eff === 'night') {
+        if (r < 0.36) synthInsects(t, dest);
+        else if (r < 0.56) synthBird(t, dest);
+        else synthMurmur(t, dest);
+      } else if (r < 0.12) synthHorn(t, dest);           // 远处长喇叭
       else if (r < 0.38) synthTraffic(t);         // 堵车：噼噼叭叭
       else if (r < 0.48) synthHornShort(t, dest); // 近距离双音
       else if (r < 0.56) synthAirHorn(t, dest);   // 卡车气喇叭
@@ -854,6 +903,52 @@
     }, 70 + gap);
   }
 
+  // 胜利庆祝：人群噪声 + 三声铜管。全部程序化，不加载音频文件。
+  function celebrate(kind) {
+    if (!ctx || !S.on || ducked || !unlocked || ctx.state !== 'running') return;
+    const max = kind === 'maximum';
+    const t = ctx.currentTime + 0.02;
+    const dur = max ? 4.2 : 3.0;
+    const level = max ? 0.15 : 0.10;
+
+    // 人群：两层带通噪声，慢慢起、慢慢落。
+    for (let k = 0; k < 2; k++) {
+      const src = noiseSource(whiteNoise(), true);
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = k ? 1450 : 850;
+      bp.Q.value = k ? 0.75 : 0.55;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(level * (k ? 0.55 : 0.85), t + 0.18);
+      g.gain.setValueAtTime(level * (k ? 0.55 : 0.85), t + dur * 0.62);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      src.connect(bp); bp.connect(g); g.connect(sfxBus);
+      src.start(t); src.stop(t + dur + 0.05);
+    }
+
+    // 铜管：三声上行短音，147 再加一组低八度。
+    const notes = max ? [261.6, 329.6, 392.0, 523.3] : [261.6, 329.6, 392.0];
+    for (let i = 0; i < notes.length; i++) {
+      const tt = t + i * (max ? 0.24 : 0.28);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, tt);
+      g.gain.linearRampToValueAtTime(max ? 0.075 : 0.052, tt + 0.025);
+      g.gain.setValueAtTime(max ? 0.060 : 0.042, tt + 0.16);
+      g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.34);
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 2600;
+      g.connect(lp); lp.connect(sfxBus);
+      for (const mul of [1, 1.5, 2]) {
+        const o = osc('sawtooth', notes[i] * mul, tt, tt + 0.4);
+        const og = ctx.createGain();
+        og.gain.value = mul === 1 ? 0.70 : 0.24;
+        o.connect(og); og.connect(g);
+      }
+    }
+  }
+
   // ----------------------------------------------------------------
   //  生命周期
   // ----------------------------------------------------------------
@@ -928,6 +1023,8 @@
     credits: function () {
       return [{ title: 'Procedural lounge trio', artist: 'Generated in code' }];
     },
+
+    celebrate: celebrate,
 
     cueHit: function (power) {
       init();

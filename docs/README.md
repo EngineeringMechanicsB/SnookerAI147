@@ -43,5 +43,6 @@ three.js 做 3D，物理、规则、AI、教学、音频全部在本地运行，
 - AI 档位：Novice、Amateur、Veteran、Master 147，以及五个真实球员画像。
 - 教学：4 课 15 步；三点规划；犯规后的“重解”规则。
 - 2D/3D 双视图；3D 台球厅场景；程序化音频。
+- 3D 可点击酒杯/吊灯/花瓶；墙上排行榜；画质 Auto/Low/Medium/High。
 - 浏览器自检 `index.html?selftest=1` 可用。
 - 代码仓库：<https://github.com/EngineeringMechanicsB/SnookerAI147>

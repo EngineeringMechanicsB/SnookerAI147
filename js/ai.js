@@ -1502,7 +1502,7 @@
     return {
       shot: best.shot,
       kind: 'pot',
-      reason: best.tag + ' · must score',
+      reason: best.tag + ' · attacking',
       value: best.value,
     };
   }
@@ -1545,19 +1545,19 @@
   const TACTICS = C.aiStyle ? C.aiStyle.tactics : function (o) { return o; };
   const PROFILES = {
     easy: {
-      key: 'easy', name: 'Novice', desc: 'Wide angle error, no position play',
+      key: 'easy', name: 'Novice', nameZh: '新手', desc: 'Wide angle error, no position play',
       style: 'random', forceAfter: 3,
       tactics: TACTICS({ potWeight: 0.8, distanceCost: 1.1, thinCost: 1.1,
         complexityCost: 1.0, compareSafety: 3.0 }),
     },
     medium: {
-      key: 'medium', name: 'Amateur', desc: 'Reads the pot, rough on position',
+      key: 'medium', name: 'Amateur', nameZh: '业余', desc: 'Reads the pot, rough on position',
       style: 'aim', forceAfter: 3,
       tactics: TACTICS({ potWeight: 0.95, distanceCost: 0.9, thinCost: 0.9,
         compareSafety: 3.6 }),
     },
     hard: {
-      key: 'hard', name: 'Veteran', desc: 'Precise cueing, plans the next shot',
+      key: 'hard', name: 'Veteran', nameZh: '老手', desc: 'Precise cueing, plans the next shot',
       // depth 必须是 2：depth 1 时叶子只看"这杆打完下一杆有没有得打"，
       // 没有"下一杆打完再下一杆"的信息，红球阶段就不会持续往黑球区走位
       // （实测单杆 42，上手均分 18.7）。改 depth 2 后单杆 132、上手均分 63。
@@ -1572,7 +1572,7 @@
         compareSafety: 6.0, breakWeight: 0.85, nextShotWeight: 26 }),
     },
     master: {
-      key: 'master', name: 'Master 147',
+      key: 'master', name: 'Master 147', nameZh: '147 大师',
       desc: 'Perfect accuracy · chases 147, only plays safe when truly nothing is on',
       // depth 3 = 真的会想"这杆之后那杆之后"。代价按 branch×深度2 控制，
       // budget/ticks 同比放大（ticks 始终按 budget 线性标定，跑分台才和浏览器一致）。
@@ -1609,7 +1609,7 @@
     //  跑分台：node tools/bench.js --profiles ronnie,higgins,trump,ding,selby --games 6
     // ================================================================
     ronnie: {
-      key: 'ronnie', name: "Ronnie O'Sullivan",
+      key: 'ronnie', name: "Ronnie O'Sullivan", nameZh: '罗尼·奥沙利文',
       desc: 'The Rocket · lightning pace, long potting, elite position, no time for safeties',
       style: 'strong', depth: 3, budget: 1800, ticks: 2160, topCands: 34, spinCands: 8, useSpin: true,
       noise: 0.00012, powerErr: 0.0024, fluff: 0.05, maxCut: 1.36, pickSafetyAbove: Infinity,
@@ -1623,7 +1623,7 @@
         compareSafety: 5.0, breakWeight: 0.95, nextShotWeight: 36 }),
     },
     higgins: {
-      key: 'higgins', name: 'John Higgins',
+      key: 'higgins', name: 'John Higgins', nameZh: '约翰·希金斯',
       desc: 'The Wizard · airtight tactics, the best safety and snooker play',
       style: 'strong', depth: 3, budget: 1800, ticks: 2300, topCands: 40, spinCands: 8, useSpin: true,
       noise: 0.000105, powerErr: 0.0021, fluff: 0.045, maxCut: 1.30, pickSafetyAbove: 1.20,
@@ -1637,7 +1637,7 @@
         compareSafety: 13.0, breakWeight: 0.78, nextShotWeight: 32 }),
     },
     trump: {
-      key: 'trump', name: 'Judd Trump',
+      key: 'trump', name: 'Judd Trump', nameZh: '贾德·特鲁姆普',
       desc: 'Long-game shot maker · flamboyant potting, heavy screw, careless safety',
       style: 'strong', depth: 3, budget: 1800, ticks: 2160, topCands: 32, spinCands: 6, useSpin: true,
       noise: 0.00015, powerErr: 0.0030, fluff: 0.07, maxCut: 1.38, pickSafetyAbove: Infinity,
@@ -1651,7 +1651,7 @@
         compareSafety: 3.5, breakWeight: 0.82, nextShotWeight: 34 }),
     },
     ding: {
-      key: 'ding', name: 'Ding Junhui',
+      key: 'ding', name: 'Ding Junhui', nameZh: '丁俊晖',
       desc: 'The Dragon · silky cue ball control, precise position, heavy scoring',
       style: 'strong', depth: 3, budget: 1800, ticks: 2160, topCands: 38, spinCands: 9, useSpin: true,
       noise: 0.000114, powerErr: 0.0024, fluff: 0.05, maxCut: 1.34, pickSafetyAbove: 1.32,
@@ -1665,7 +1665,7 @@
         compareSafety: 9.0, breakWeight: 1.00, nextShotWeight: 38 }),
     },
     selby: {
-      key: 'selby', name: 'Mark Selby',
+      key: 'selby', name: 'Mark Selby', nameZh: '马克·塞尔比',
       desc: 'The Jester · slow grind, counter-punching, drags opponents into the mud',
       style: 'strong', depth: 3, budget: 1800, ticks: 2300, topCands: 40, spinCands: 7, useSpin: true,
       noise: 0.000135, powerErr: 0.0027, fluff: 0.05, maxCut: 1.28, pickSafetyAbove: 1.15,
@@ -1915,7 +1915,7 @@
           shot: applyHumanError(best.entry.shot, prof),
           kind: 'pot',
           reason: force
-            ? `Must score · ${C.COL_CN[ball.label] || ''} for ${best.entry.verdict.points}`
+            ? `Attacking · ${C.COL_CN[ball.label] || ''} for ${best.entry.verdict.points}`
             : prof.desperate
               ? `Chasing 147 · ${C.COL_CN[ball.label] || ''} for ${best.entry.verdict.points}`
               : `Potting the ${C.COL_CN[ball.label] || ''}`,
@@ -2077,7 +2077,7 @@
       shot: applyHumanError(best.entry.shot, prof),
       kind: 'pot',
       reason: force
-        ? `Must score · ${C.COL_CN[ball] || ''} for ${best.entry.verdict.points}`
+        ? `Attacking · ${C.COL_CN[ball] || ''} for ${best.entry.verdict.points}`
         : prof.desperate
           ? `Chasing 147 · ${C.COL_CN[ball] || ''} for ${best.entry.verdict.points}`
           : `Potting the ${C.COL_CN[ball] || ''}`,
