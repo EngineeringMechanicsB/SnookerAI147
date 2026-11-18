@@ -454,15 +454,18 @@
     // 扫掠判据命中但当前并不重叠、又没解出接触时刻：不做位置修正，
     // 直接按当前球心连线方向处理冲量（连续，不会把两球反向怼到一起）
 
-    // 记录白球首次接触（对齐原版：只要重叠就算碰到）
+    const dvx = a.vx - b.vx, dvy = a.vy - b.vy;
+    const relVn = dvx * nx + dvy * ny;
+    if (relVn <= 0) return;                          // 正在分离，不处理
+
+    // 记录白球首次接触：必须是**正在接近**的碰撞。
+    // 贴球时白球朝远离障碍的方向出杆，初始重叠但相对速度在分离；
+    // 旧代码只要重叠就记 firstContact，导致“贴着的彩球”被误判为首碰，
+    // 该打红球时 AI 怎么解都算犯规。斯诺克规则里贴球打走不算碰到它。
     if (cueRef && ev && !ev.firstContact) {
       if (a === cueRef) ev.firstContact = b;
       else if (b === cueRef) ev.firstContact = a;
     }
-
-    const dvx = a.vx - b.vx, dvy = a.vy - b.vy;
-    const relVn = dvx * nx + dvy * ny;
-    if (relVn <= 0) return;                          // 正在分离，不处理
 
     // 球球接触同样记录精确位置：两颗球都在**解出的接触构型**上留一个点，
     // 预览里的变向就不会偏向采样帧末尾。

@@ -2296,6 +2296,53 @@
     return fallbackShot(state, balls);
   }
 
+  // ================================================================
+  //  合法解球扫描（护栏兜底）
+  //
+  //  flairEscape 是“多库花活”的小概率搜索；这里是无条件保底：
+  //  扫描整圈角度 × 几档力度，先只跑到首触，留下首触合法的线路，
+  //  再完整模拟一次确认裁判合法。被贴球/被斯诺克时宁可先解到球。
+  // ================================================================
+  function legalEscape(state, balls, prof) {
+    const cue = findCue(balls);
+    const targets = R.legalTargets(state, balls);
+    if (!cue || !cue.isOnTable() || !targets.length) return null;
+    const cueIdx = balls.indexOf(cue);
+    const legal = {};
+    for (let i = 0; i < targets.length; i++) legal[targets[i].label] = true;
+    const deadline = now() + 420;
+    let best = null, bestCost = Infinity;
+    const powers = [6, 10, 16, 24, 32];
+    const abort = (ev, world) => {
+      if (world[cueIdx] && world[cueIdx].potted) return true;
+      return !!ev.firstContact;
+    };
+    for (let ai = 0; ai < 128 && now() < deadline; ai++) {
+      const angle = ai / 128 * Math.PI * 2;
+      for (let pi = 0; pi < powers.length && now() < deadline; pi++) {
+        const shot = { angle: angle, power: powers[pi], spinX: 0, spinY: 0 };
+        const probe = S.simulateShot(balls, shot, { abort: abort });
+        if (!probe.ok || probe.cuePotted) continue;
+        if (!probe.firstContactLabel || !legal[probe.firstContactLabel]) continue;
+        // 首触合法只是必要条件；完整跑一次，确认没有后续犯规/白球落袋。
+        const full = S.simulateAndJudge(state, balls, shot);
+        if (!full.verdict || !full.verdict.legal || full.res.cuePotted) continue;
+        const cost = (full.res.bounces || 0) * 1000 +
+          Math.abs(shot.power - 12) * 2 + ai * 0.01;
+        if (cost < bestCost) {
+          bestCost = cost;
+          best = {
+            shot: shot, kind: 'safety',
+            reason: 'Legal escape · ' + Math.max(1, full.res.bounces || 0) + ' cushion' +
+              ((full.res.bounces || 0) === 1 ? '' : 's'),
+            value: -1000,
+          };
+        }
+      }
+    }
+    return best;
+  }
+
   // ----------------------------------------------------------------
   //  出杆前合法性护栏
   //
@@ -2314,6 +2361,29 @@
       } catch (e) { return false; }
     }
     if (ok(decision.shot)) return decision;
+
+    // 人类会偶尔犯傻：约 1% 的非法杆不修正，保留真实的失误。
+    const prof = PROFILES[level] || PROFILES.master;
+    if (Math.random() < (prof.guardMistake === undefined ? 0.01 : prof.guardMistake)) {
+      return decision;
+    }
+
+    // 先试多库解球：贴球/被斯诺克时，兜底直线杆可能仍然先碰障碍。
+    try {
+      const esc = flairEscape(state, balls, PROFILES[level] || PROFILES.master);
+      if (esc && esc.shot && ok(esc.shot)) {
+        esc.reason = 'Legal correction · ' + (decision.reason || 'avoid foul');
+        return esc;
+      }
+    } catch (e) { /* 继续保底扫描 */ }
+
+    try {
+      const esc = legalEscape(state, balls, prof);
+      if (esc && esc.shot && ok(esc.shot)) {
+        esc.reason = 'Legal correction · ' + (decision.reason || 'avoid foul');
+        return esc;
+      }
+    } catch (e) { /* 继续兜底 */ }
 
     // 兜底杆不套 human error：它的目的就是“先保证合法”。
     try {
