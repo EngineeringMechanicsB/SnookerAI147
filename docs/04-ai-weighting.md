@@ -32,6 +32,23 @@
 | 防守难度 | `safetyDifficulty` | 对手无进球线、无直击线、白球孤立、后斯诺克限制 |
 | 击球复杂度 | `complexity` | 翻袋/组合/一库/加塞/切角/实际撞库次数 |
 | 球局开放程度 | `openness` | 红球最近邻平均距离；满堆约 0.1，散开接近 1 |
+| **下一杆质量** | `nextQuality` | 这杆打完后，下一杆还有多少条线路、最好那条多舒服；0 = 自己给自己做斯诺克，1 = 下一杆很舒服 |
+
+`nextQuality` 是 2026-11-18 加的最高优先级特征。它单独计算，不替代
+`breakValue`：`breakValue` 是搜索递归给出的连续进攻价值，`nextQuality`
+是“白球停位后下一杆的实际几何质量”。两者都保留，因为一个来自搜索，
+一个来自局面。
+
+`nextQuality` 的算法：
+
+```text
+nextTargets = legalTargets(打完后的 state, 打完后的球)
+g = geomPot(..., nextTargets, 下一杆是否该打红, 瞄准余量)
+nextQuality = clamp((g.count * 0.22 + g.best * 2.2) / 3.2, 0, 1)
+```
+
+`g.count` 是下一杆能打进的线路数，`g.best` 是最好那条的舒适度。清完台
+直接给 1。
 
 ### 防守难度
 
@@ -85,7 +102,9 @@ cost = distanceCost * distance * 2.2
 
 openReward = opennessValue * (openAfter - 0.5) * 1.4
 
-score = attack - risk - cost + openReward
+nextReward = nextShotWeight * (nextQuality - 0.35)
+
+score = attack - risk - cost + openReward + nextReward
 ```
 
 几个设计点：
@@ -95,6 +114,8 @@ score = attack - risk - cost + openReward
   球”，单杆很短。
 - `risk` 在低命中率时惩罚很重；这是“不要用远台斯诺克换简单黑球”的另一半。
 - `openAfter` 用打完后的球局开放度，鼓励拆球堆/打开局面。
+- `nextShotWeight` 是**所有球员的前三权重**。进得再漂亮，下一杆没得打就是
+  坏球；这条比“这一杆多拿一分”更重要。
 
 ## 4. 防守评分
 
@@ -139,17 +160,17 @@ score = leave - cost
 
 `PROFILES` 里每个画像带 `tactics` 和 `forceAfter`。
 
-| 球员 | potWeight | distanceCost | thinCost | complexityCost | safetyValue | compareSafety | breakWeight | forceAfter |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Novice | 0.80 | 1.10 | 1.10 | 1.00 | 1.00 | 3.0 | 0.75 | 3 |
-| Amateur | 0.95 | 0.90 | 0.90 | 0.75 | 1.00 | 3.6 | 0.75 | 3 |
-| Veteran | 1.15 | 0.55 | 0.55 | 0.50 | 0.90 | 6.0 | 0.85 | 3 |
-| Master 147 | 1.55 | 0.22 | 0.22 | 0.20 | 0.55 | 2.5 | 1.15 | 2 |
-| Ronnie O'Sullivan | 1.42 | 0.48 | 0.46 | 0.30 | 0.62 | 5.0 | 0.95 | 2 |
-| John Higgins | 1.02 | 0.86 | 0.88 | 0.86 | 1.65 | 13.0 | 0.78 | 4 |
-| Judd Trump | 1.20 | 0.20 | 0.28 | 0.24 | 0.42 | 3.5 | 0.82 | 2 |
-| Ding Junhui | 1.24 | 0.52 | 0.50 | 0.46 | 0.86 | 9.0 | 1.00 | 3 |
-| Mark Selby | 0.92 | 0.96 | 1.00 | 0.95 | 1.85 | 15.0 | 0.68 | 5 |
+| 球员 | potWeight | distanceCost | thinCost | complexityCost | safetyValue | compareSafety | breakWeight | nextShotWeight | forceAfter |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Novice | 0.80 | 1.10 | 1.10 | 1.00 | 1.00 | 3.0 | 0.75 | 24 | 3 |
+| Amateur | 0.95 | 0.90 | 0.90 | 0.75 | 1.00 | 3.6 | 0.75 | 24 | 3 |
+| Veteran | 1.15 | 0.55 | 0.55 | 0.50 | 0.90 | 6.0 | 0.85 | 26 | 3 |
+| Master 147 | 1.55 | 0.22 | 0.22 | 0.20 | 0.55 | 2.5 | 1.15 | 40 | 2 |
+| Ronnie O'Sullivan | 1.42 | 0.48 | 0.46 | 0.30 | 0.62 | 5.0 | 0.95 | 36 | 2 |
+| John Higgins | 1.02 | 0.86 | 0.88 | 0.86 | 1.65 | 13.0 | 0.78 | 32 | 4 |
+| Judd Trump | 1.20 | 0.20 | 0.28 | 0.24 | 0.42 | 3.5 | 0.82 | 34 | 2 |
+| Ding Junhui | 1.24 | 0.52 | 0.50 | 0.46 | 0.86 | 9.0 | 1.00 | 38 | 3 |
+| Mark Selby | 0.92 | 0.96 | 1.00 | 0.95 | 1.85 | 15.0 | 0.68 | 34 | 5 |
 
 读表方式：
 
@@ -158,6 +179,7 @@ score = leave - cost
 - `safetyValue` 越高，越看重把对手做死。Selby 1.85，Higgins 1.65。
 - `compareSafety` 越高，越容易触发“进攻和防守比较”；不是越高越防守，
   还要看 `safetyValue` 和实际防守分。
+- `nextShotWeight` 是下一杆质量权重，所有画像都在 24~40，属于最高档。
 - `forceAfter` 是连续几杆没进球后强制拼一杆的阈值。
 
 ## 7. 连续不进球阈值
@@ -169,8 +191,13 @@ score = leave - cost
 - Higgins：4 杆。
 - Selby：5 杆。
 
-`main.js` 的 `publicState()` 按当前 AI 画像算 `forcePot`，界面提示的文字也
-同步该阈值。AI 内部仍然会再判断一次，防止外部状态没传对。
+**这个功能只对 AI 自战启用。** 人机对战时 `publicState()` 把
+`forceAllowed` 设为 `false`，`forcePot` 也为 `false`；AI 内部
+`decideStrong()`、`decidePool()` 和 `ai-pool.js` 都检查 `forceAllowed`，
+不会因为“几杆没进球”而强行拼球。人类自己决定什么时候拼。
+
+`main.js` 的 `publicState()` 按当前 AI 画像算 `forceAt`，界面提示只在
+双方都是 AI 时出现。AI 内部仍然会再判断一次，防止外部状态没传对。
 
 ## 8. 调参时踩过的坑
 
@@ -224,16 +251,37 @@ Ronnie 不同。
 
 解决：`files` 列表加 `ai-style.js`，并写了 Worker 路径的浏览器测试。
 
+### 8.7 出杆误差导致先碰彩球
+
+搜索里的杆法合法，不代表加上 `applyHumanError` 后还合法。该打红球时，
+角度误差可能让白球先碰到彩球，直接犯规。用户观察到“AI 反复打彩球犯规”，
+根因就是这里：搜索按红球算，执行时偏到了彩球。
+
+解决：`guardDecision()` 在真正出杆前用同一套物理再验一次。不合法就换
+`fallbackShot()` 的合法杆；兜底杆不套 human error，先保证不犯规。主线程
+和 Worker 路径都会经过这个护栏。
+
+### 8.8 强制进球不该用在人机对战
+
+“几杆不进球就强制拼一杆”是 AI 自战用来避免无限防守的机制。人机对战时
+它会让 AI 做出不符合局面的非受迫进攻。
+
+解决：`publicState()` 只在双方都是 AI 时把 `forceAllowed` 设为 `true`；
+`decideStrong()`、`decidePool()`、`ai-pool.js` 都检查这个字段。人机对战
+不再强制拼球，也不显示 `Must score` 提示。
+
 ## 9. 验证结果
 
-2026-11-15 的验证：
+2026-11-18 的验证：
 
 - 浏览器自检 `index.html?selftest=1`：一致率 100%，不匹配 0，异常 0。
-- 大师无头对局（虚拟时钟，2600 ticks）：最高单杆 107，清台。
-- 浏览器自检预算下当次最高单杆 73（预算和局面会影响）。
-- 防守后对手无球可下约 22.7%。
+- 大师无头对局（虚拟时钟，2600 ticks）：最高单杆 142，清台。
+- 浏览器自检预算下当次最高单杆 66（预算和局面会影响）。
 - 贴袋口黑球场景：所有画像都选黑球，没有选斯诺克。
-- Worker 路径：黑球场景返回 `pot`，`styleScore` 正常。
+- Worker 路径：黑球场景返回 `pot`、`legal=true`、`styleScore` 正常。
+- `forceAllowed = false` + `noPotStreak = 10`：AI 选安全球，没有
+  `Must score`。
+- 故意瞄彩球的非法杆经过 `guardDecision()` 后变为合法首触红球。
 
 ## 10. 后续可调项
 

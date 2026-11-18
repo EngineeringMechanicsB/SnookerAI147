@@ -444,8 +444,12 @@
   function publicState() {
     const p = G.currentPlayer;
     const pl = G.players && G.players[p];
+    const opp = G.players && G.players[1 - p];
     const forceAt = (pl && pl.type === 'ai' && C.ai.PROFILES[pl.level] &&
       C.ai.PROFILES[pl.level].forceAfter) || 3;
+    // 强制进球只对 AI 自战启用。人机对战里 AI 不需要“几杆不进就硬拼”：
+    // 那会把正常的防守/试探变成非受迫进攻。人类自己决定什么时候拼。
+    const forceAllowed = !!(pl && pl.type === 'ai' && opp && opp.type === 'ai');
     return {
       mode: G.gameMode,
       isRespottedBlack: G.isRespottedBlack,
@@ -456,7 +460,8 @@
       opening: !!G.opening,
       negativeStreak: G.negativeStreak || 0,
       noPotStreak: (G.noPotStreak && G.noPotStreak[p]) || 0,
-      forcePot: !!(G.noPotStreak && G.noPotStreak[p] >= forceAt),
+      forceAllowed: forceAllowed,
+      forcePot: !!(forceAllowed && G.noPotStreak && G.noPotStreak[p] >= forceAt),
       poolOpen: G.poolOpen !== false,
       poolGroups: (G.poolGroups || [null, null]).slice(),
     };
@@ -2130,10 +2135,12 @@
     } else {
       G.noPotStreak[p] = (G.noPotStreak[p] || 0) + 1;
       const shooter = G.players[p];
+      const opponent = G.players[1 - p];
       const forceAfter = (shooter && C.ai.PROFILES[shooter.level] &&
         C.ai.PROFILES[shooter.level].forceAfter) || 3;
-      if (shooter && shooter.type === 'ai' &&
-          G.noPotStreak[p] >= forceAfter && G.forceNotice[p] < forceAfter) {
+      const bothAI = !!(shooter && shooter.type === 'ai' &&
+        opponent && opponent.type === 'ai');
+      if (bothAI && G.noPotStreak[p] >= forceAfter && G.forceNotice[p] < forceAfter) {
         G.forceNotice[p] = forceAfter;
         showMsg('Must score',
           seatName(shooter) + ' has gone ' + forceAfter +
@@ -2353,6 +2360,9 @@
       if (!decision || !decision.shot) {
         decision = { shot: { angle: G.aimAngle, power: 9, spinX: 0, spinY: 0 }, kind: 'fallback', reason: 'Nothing found — playing a basic shot' };
       }
+      // 出杆前合法性护栏：human error 可能把合法杆改成先碰彩球。
+      // 花一次模拟换“不会连续犯规”，比省这点 CPU 重要。
+      decision = C.ai.guardDecision(publicState(), G.balls, decision, p.level);
 
       G.aiThinking = false;
       applyAIShot(decision, token);

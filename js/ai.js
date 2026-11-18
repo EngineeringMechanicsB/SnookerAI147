@@ -536,6 +536,20 @@
     return v;
   }
 
+  // 打完这一杆后，下一杆到底好不好打。
+  // 这是选球加权里权重最高的一类特征：不是"这杆进不进"，而是
+  // "进完之后我还能不能接着打、下一颗是不是黑球/红球的好位置"。
+  // 与 leafEval 的区别：leafEval 是搜索内部的价值，这里返回 0~1，
+  // 交给 ai-style.js 按球员权重参与最终选球。
+  function nextShotQuality(world, ns, cfg) {
+    const cue = findCue(world);
+    if (!cue || !cue.isOnTable()) return 0;
+    const tg = R.legalTargets(ns, world);
+    if (!tg.length) return 1;                    // 清完了，当然是满分
+    const g = geomPot(world, tg, ns.needRed, cfg.aimClear);
+    return C.clamp((g.count * 0.22 + g.best * 2.2) / 3.2, 0, 1);
+  }
+
   // ================================================================
   //  主搜索：带"下一杆还有没有解"的递归检查
   //  —— 这是 147 的关键：不会进了这杆却把下一杆打死
@@ -684,6 +698,16 @@
     if (all) {
       all.sort((a, b) => b.value - a.value);
       const top = all.slice(0, ROBUST_TOP + 2);
+      // 给前几名算"下一杆质量"。放在加权选球之前，因为它是权重最高的
+      // 特征之一：进得再漂亮，下一杆没得打就是坏球。
+      for (let i = 0; i < top.length; i++) {
+        const t = top[i];
+        if (!t || !t.entry) continue;
+        if (t.world && t.nextState) {
+          t.nextQuality = nextShotQuality(t.world, t.nextState, cfg);
+          t.entry.nextQuality = t.nextQuality;
+        }
+      }
       // 加权选球：只在根层、且有画像权重时做。先按旧 value 取前几名
       // （保证搜索剪枝与预算不变），再用特征权重在这几名里重新挑。
       if (C.aiStyle && cfg.prof) {
@@ -1545,7 +1569,7 @@
       tactics: TACTICS({ potWeight: 1.15, riskCost: 1.0, distanceCost: 0.55,
         thinCost: 0.55, spinCost: 0.45, cueTravelCost: 0.40, objectTravelCost: 0.35,
         safetyValue: 0.90, complexityCost: 0.50, opennessValue: 0.60,
-        compareSafety: 6.0, breakWeight: 0.85 }),
+        compareSafety: 6.0, breakWeight: 0.85, nextShotWeight: 26 }),
     },
     master: {
       key: 'master', name: 'Master 147',
@@ -1564,7 +1588,7 @@
       tactics: TACTICS({ potWeight: 1.55, riskCost: 1.25, distanceCost: 0.22,
         thinCost: 0.22, spinCost: 0.20, cueTravelCost: 0.22, objectTravelCost: 0.20,
         safetyValue: 0.55, complexityCost: 0.20, opennessValue: 0.90,
-        compareSafety: 2.5, breakWeight: 1.15 }),
+        compareSafety: 2.5, breakWeight: 1.15, nextShotWeight: 40 }),
     },
 
     // ================================================================
@@ -1596,7 +1620,7 @@
       tactics: TACTICS({ potWeight: 1.42, riskCost: 1.15, distanceCost: 0.48,
         thinCost: 0.46, spinCost: 0.42, cueTravelCost: 0.32, objectTravelCost: 0.28,
         safetyValue: 0.62, complexityCost: 0.30, opennessValue: 0.78,
-        compareSafety: 5.0, breakWeight: 0.95 }),
+        compareSafety: 5.0, breakWeight: 0.95, nextShotWeight: 36 }),
     },
     higgins: {
       key: 'higgins', name: 'John Higgins',
@@ -1610,7 +1634,7 @@
       tactics: TACTICS({ potWeight: 1.02, riskCost: 0.88, distanceCost: 0.86,
         thinCost: 0.88, spinCost: 0.66, cueTravelCost: 0.54, objectTravelCost: 0.42,
         safetyValue: 1.65, complexityCost: 0.86, opennessValue: 0.38,
-        compareSafety: 13.0, breakWeight: 0.78 }),
+        compareSafety: 13.0, breakWeight: 0.78, nextShotWeight: 32 }),
     },
     trump: {
       key: 'trump', name: 'Judd Trump',
@@ -1624,7 +1648,7 @@
       tactics: TACTICS({ potWeight: 1.20, riskCost: 1.35, distanceCost: 0.20,
         thinCost: 0.28, spinCost: 0.38, cueTravelCost: 0.50, objectTravelCost: 0.26,
         safetyValue: 0.42, complexityCost: 0.24, opennessValue: 0.84,
-        compareSafety: 3.5, breakWeight: 0.82 }),
+        compareSafety: 3.5, breakWeight: 0.82, nextShotWeight: 34 }),
     },
     ding: {
       key: 'ding', name: 'Ding Junhui',
@@ -1638,7 +1662,7 @@
       tactics: TACTICS({ potWeight: 1.24, riskCost: 0.96, distanceCost: 0.52,
         thinCost: 0.50, spinCost: 0.44, cueTravelCost: 0.82, objectTravelCost: 0.40,
         safetyValue: 0.86, complexityCost: 0.46, opennessValue: 0.62,
-        compareSafety: 9.0, breakWeight: 1.00 }),
+        compareSafety: 9.0, breakWeight: 1.00, nextShotWeight: 38 }),
     },
     selby: {
       key: 'selby', name: 'Mark Selby',
@@ -1652,7 +1676,7 @@
       tactics: TACTICS({ potWeight: 0.92, riskCost: 0.72, distanceCost: 0.96,
         thinCost: 1.00, spinCost: 0.78, cueTravelCost: 0.58, objectTravelCost: 0.46,
         safetyValue: 1.85, complexityCost: 0.95, opennessValue: 0.22,
-        compareSafety: 15.0, breakWeight: 0.68 }),
+        compareSafety: 15.0, breakWeight: 0.68, nextShotWeight: 34 }),
     },
   };
   const LEVELS = PROFILES;    // 旧代码用 LEVELS 这个名字，保留别名
@@ -1797,7 +1821,9 @@
     // 进球线路全部试一遍。见 forcedPot() 的注释。
     // 阈值每个球员不同：奥沙利文/特鲁姆普 2 杆就开拼，塞尔比能磨到 5 杆。
     const forceAfter = prof.forceAfter || 3;
-    const force = !!(state.forcePot || (state.noPotStreak || 0) >= forceAfter);
+    const forceAllowed = state.forceAllowed !== false;
+    const force = !!(state.forcePot ||
+      (forceAllowed && (state.noPotStreak || 0) >= forceAfter));
 
     let best = null;
     try {
@@ -2256,7 +2282,9 @@
       };
     }
     // 连续没进球：池球同样允许翻袋、组合球、加塞，先把球打进去
-    if (state.forcePot || (state.noPotStreak || 0) >= (prof.forceAfter || 3)) {
+    const forceAllowed = state.forceAllowed !== false;
+    if (state.forcePot ||
+        (forceAllowed && (state.noPotStreak || 0) >= (prof.forceAfter || 3))) {
       const fp = forcedPot(state, balls, Math.max(350, (budgetMs || 900) * 0.8));
       if (fp) return fp;
     }
@@ -2266,6 +2294,43 @@
       if (escape) return escape;
     }
     return fallbackShot(state, balls);
+  }
+
+  // ----------------------------------------------------------------
+  //  出杆前合法性护栏
+  //
+  //  搜索只保证“模拟里的杆法合法”，但 applyHumanError 会改角度/力度，
+  //  有时会把一杆本来合法的球打成先碰彩球（该打红球时尤其致命）。
+  //  这里在真正出杆前用同一套物理再验一次：不合法就换成兜底的合法杆。
+  //  它不提高 AI 的准度，只保证“不会明知故犯地连续犯规”。
+  // ----------------------------------------------------------------
+  function guardDecision(state, balls, decision, level) {
+    if (!decision || !decision.shot) return decision;
+    function ok(shot) {
+      try {
+        const sim = S.simulateAndJudge(state, balls, shot);
+        return !!(sim && sim.verdict && sim.verdict.legal &&
+          sim.res && !sim.res.cuePotted);
+      } catch (e) { return false; }
+    }
+    if (ok(decision.shot)) return decision;
+
+    // 兜底杆不套 human error：它的目的就是“先保证合法”。
+    try {
+      const fb = fallbackShot(state, balls);
+      if (fb && fb.shot && ok(fb.shot)) {
+        fb.reason = 'Legal correction · ' + (decision.reason || 'avoid foul');
+        fb.kind = fb.kind || 'fallback';
+        return fb;
+      }
+    } catch (e) { /* 继续试强制进球 */ }
+
+    try {
+      const fp = forcedPot(state, balls, 450);
+      if (fp && fp.shot && ok(fp.shot)) return fp;
+    } catch (e) { /* 最后仍返回原决策 */ }
+
+    return decision;
   }
 
   // ----------------------------------------------------------------
@@ -2312,6 +2377,7 @@
     setVirtualClock: setVirtualClock,
     clockTicks: function () { return clockTicks; },
     decide: decide,
+    guardDecision: guardDecision,
     paceOf: paceOf,
     // ---- 多线程（js/ai-pool.js 用）----
     searchSlice: searchSlice,

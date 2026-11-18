@@ -217,7 +217,9 @@
       ? (prof.budget || 800) : opts.budgetMs;
     const ballData = toPlainBalls(balls);
     const forceAfter = (prof && prof.forceAfter) || 3;
-    const force = !!(state.forcePot || (state.noPotStreak || 0) >= forceAfter);
+    const forceAllowed = state.forceAllowed !== false;
+    const force = !!(state.forcePot ||
+      (forceAllowed && (state.noPotStreak || 0) >= forceAfter));
 
     // 连续不进：交给单个 worker 跑完整的强制进球搜索（直达/加塞/翻袋/组合球）。
     // 不切片：这是一次性的穷举，切碎后每个 worker 都只看到一部分线路。

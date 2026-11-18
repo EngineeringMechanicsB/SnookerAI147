@@ -60,6 +60,9 @@
     // 连续进攻/单杆价值。压得太低会变成"每杆都挑最好进的球"，
     // 单杆很短；职业球员会为了下一颗黑球接受一点难度。
     breakWeight: 0.75,
+    // 下一杆质量。所有球员的前三权重：进得再漂亮，下一杆没得打就是坏球。
+    // 表示"打红叫黑/打黑叫红"的能力，不只是当前这一杆的进球。
+    nextShotWeight: 24,
   };
 
   function tacticsOf(prof) {
@@ -219,7 +222,15 @@
       t.complexityCost * comp * 2.0;
 
     const openReward = t.opennessValue * (openAfter - 0.5) * 1.4;
-    return attack - risk - cost + openReward;
+
+    // 下一杆质量：0 = 进完自己给自己做斯诺克，1 = 下一杆很舒服。
+    // 0.35 是中位线，低于它会明显扣分，高于它才加分。
+    const nextQ = typeof e.nextQuality === 'number'
+      ? n01(e.nextQuality) : 0.5;
+    const nextReward = (t.nextShotWeight === undefined ? 24 : t.nextShotWeight)
+      * (nextQ - 0.35);
+
+    return attack - risk - cost + openReward + nextReward;
   }
 
   // ----------------------------------------------------------------
