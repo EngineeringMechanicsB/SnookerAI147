@@ -94,6 +94,7 @@
     </select>
 
     <button class="mode-select sound-btn" id="soundBtn" title="Procedural lounge jazz + synthesized pool SFX (no audio files)">Sound Off</button>
+    <button class="mode-select sound-btn" id="bgmBtn" title="Background music only">BGM On</button>
     <input class="vol-range" id="volRange" type="range" min="0" max="1" step="0.05" value="0.7"
            title="Volume" aria-label="Volume">
   </div>
@@ -244,6 +245,10 @@
       <div class="summary-title" id="boardTitle">Leaderboard</div>
       <div class="board-sub" id="boardSub">Fastest high scores win.</div>
       <div class="board-entry" id="boardEntry" hidden>
+        <button class="restart-btn primary" id="boardRecord">Record this score</button>
+        <button class="restart-btn" id="boardSkip">Skip</button>
+      </div>
+      <div class="board-entry" id="boardNameRow" hidden>
         <input id="boardName" maxlength="12" autocomplete="off" placeholder="Your name">
         <button class="restart-btn primary" id="boardSave">Save</button>
       </div>

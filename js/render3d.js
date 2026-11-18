@@ -49,6 +49,7 @@
   const RAIL_W = 12;           // 木框宽度（我们 28px 的库边带里，外侧 12px 是木头）
 
   let renderer = null, scene = null;
+  let roomRoot = null;                  // 房间几何组：俯视正交时整组隐藏
   // 画质只调“渲染开销”：像素比、阴影贴图、环境粒子。
   // 球和球桌的几何/材质不降级，始终保留高精度。
   let qualityName = 'auto';
@@ -1404,6 +1405,9 @@
     // 挂钟：+X 墙靠后；旁边是排行榜黑板
     makeClock(wallHX - 12, floorY + 1120, -1980, -Math.PI / 2);
     makeLeaderboard(wallHX - 12, floorY + 1120, -2380, -Math.PI / 2);
+
+    // +Z 墙靠左：一扇关着的木门，补全房间的入口。
+    makeDoor(-2350, wallHZ - 14, floorY, Math.PI);
     // 飞镖盘：台球厅的常见墙面装饰，也打破一整片灰泥
     makeDartboard(wallHX - 12, floorY + 1120, 1700, -Math.PI / 2);
   }
@@ -1527,6 +1531,48 @@
     ggroup.position.set(x, y, z);
     ggroup.rotation.y = ry;
     scene.add(ggroup);
+  }
+
+  // 房间入口：关着的木门。没有门会像密室，门框/门板/把手给房间一个“出口”。
+  function makeDoor(x, z, floorY, ry) {
+    const group = new THREE.Group();
+    const frameMat = new THREE.MeshStandardMaterial({
+      map: woodTexture(2, 1), color: 0x3a2416, roughness: 0.66,
+    });
+    const panelMat = new THREE.MeshStandardMaterial({
+      map: woodTexture(2, 1), color: 0x5a3420, roughness: 0.58,
+    });
+    const W = 320, H = 820, T = 34;
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(W + T * 2, H + T, 22), frameMat);
+    frame.position.y = floorY + H / 2;
+    frame.castShadow = true; frame.receiveShadow = true;
+    group.add(frame);
+
+    const door = new THREE.Mesh(new THREE.BoxGeometry(W, H, 12), panelMat);
+    door.position.set(0, floorY + H / 2, 10);
+    door.castShadow = true; door.receiveShadow = true;
+    group.add(door);
+
+    // 两块内凹门板：不用贴图也能看出是木门。
+    const insetMat = new THREE.MeshStandardMaterial({
+      color: 0x3d2314, roughness: 0.7,
+    });
+    for (const [py, ph] of [[floorY + 520, 300], [floorY + 210, 300]]) {
+      const inset = new THREE.Mesh(new THREE.BoxGeometry(W - 74, ph, 4), insetMat);
+      inset.position.set(0, py, 17);
+      group.add(inset);
+    }
+
+    const knob = new THREE.Mesh(
+      new THREE.SphereGeometry(10, 12, 8),
+      new THREE.MeshStandardMaterial({ color: 0xb08a45, roughness: 0.28, metalness: 0.75 })
+    );
+    knob.position.set(W / 2 - 36, floorY + 430, 20);
+    group.add(knob);
+
+    group.position.set(x, 0, z);
+    group.rotation.y = ry;
+    scene.add(group);
   }
 
   // ----------------------------------------------------------------
@@ -2996,6 +3042,28 @@
     ambRefs.room = room;
 
     buildRoom();       // ← 房间先建（地板/桌腿要在地底下），台面再压上去
+
+    // 把“房间”整体收进一个组：俯视正交时整组隐藏，只保留灯光/灯组。
+    // 灯光不能跟着隐藏，否则台面会突然变暗；灯组保留是为了让 SpotLight 继续
+    // 工作，灯罩本身在俯视时已由 vis 隐藏。
+    roomRoot = new THREE.Group();
+    scene.add(roomRoot);
+    const keep = new Set();
+    for (const k in ambRefs) {
+      const o = ambRefs[k];
+      if (o && o.isObject3D) keep.add(o);
+      if (o && o.target && o.target.isObject3D) keep.add(o.target);
+    }
+    for (let i = 0; i < lampSway.length; i++) {
+      if (lampSway[i] && lampSway[i].g) keep.add(lampSway[i].g);
+    }
+    const roomKids = scene.children.slice();
+    for (let i = 0; i < roomKids.length; i++) {
+      const o = roomKids[i];
+      if (o === roomRoot || keep.has(o)) continue;
+      roomRoot.add(o);
+    }
+
     buildTable();
     buildCue();
     buildHelpers();
@@ -3983,6 +4051,8 @@
       for (let i = 0; i < ceilingVis.length; i++) ceilingVis[i].visible = lampVisOn;
       if (dust) dust.visible = lampVisOn && qualityDust;
     }
+    // 俯视正交：只画球桌/球/球杆，房间整组隐藏，省掉墙/家具的 draw call。
+    if (roomRoot) roomRoot.visible = perspCam;
 
     updateAmbient(perfNow());
 

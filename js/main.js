@@ -63,7 +63,7 @@
     spinText: $('spinText'), thinkLabel: $('thinkLabel'),
     viewBtn: $('viewBtn'), orbitBtn: $('orbitBtn'),
     // 声音
-    soundBtn: $('soundBtn'), volRange: $('volRange'),
+    soundBtn: $('soundBtn'), bgmBtn: $('bgmBtn'), volRange: $('volRange'),
     // 光照氛围 / 画质
     ambienceSelect: $('ambienceSelect'),
     qualitySelect: $('qualitySelect'),
@@ -85,7 +85,8 @@
     sumNameA: $('sumNameA'), sumNameB: $('sumNameB'), sumBody: $('sumBody'),
     sumRematch: $('sumRematch'), sumClose: $('sumClose'), sumHint: $('sumHint'),
     boardOverlay: $('boardOverlay'), boardTitle: $('boardTitle'), boardSub: $('boardSub'),
-    boardEntry: $('boardEntry'), boardName: $('boardName'), boardSave: $('boardSave'),
+    boardEntry: $('boardEntry'), boardRecord: $('boardRecord'), boardSkip: $('boardSkip'),
+    boardNameRow: $('boardNameRow'), boardName: $('boardName'), boardSave: $('boardSave'),
     boardEmpty: $('boardEmpty'), boardBody: $('boardBody'), boardNameHead: $('boardNameHead'),
     boardScoreHead: $('boardScoreHead'), boardTimeHead: $('boardTimeHead'),
     boardBestHead: $('boardBestHead'), boardClose: $('boardClose'),
@@ -2421,7 +2422,12 @@
     if (dom.boardScoreHead) dom.boardScoreHead.textContent = t('board.score');
     if (dom.boardTimeHead) dom.boardTimeHead.textContent = t('board.time');
     if (dom.boardBestHead) dom.boardBestHead.textContent = t('board.best');
+    if (dom.boardClose) dom.boardClose.textContent = t('summary.close');
+    // 赢局后先只问“要不要记录”，玩家点 Record 才显示名字输入。
     if (dom.boardEntry) dom.boardEntry.hidden = !offer;
+    if (dom.boardRecord) dom.boardRecord.textContent = t('board.record');
+    if (dom.boardSkip) dom.boardSkip.textContent = t('board.skip');
+    if (dom.boardNameRow) dom.boardNameRow.hidden = true;
     if (dom.boardName) dom.boardName.placeholder = t('board.placeholder');
     if (offer && dom.boardName) {
       let n = 'Player';
@@ -2457,8 +2463,19 @@
     renderBoardRows(clean);
     G.boardOffer = null;
     if (dom.boardEntry) dom.boardEntry.hidden = true;
+    if (dom.boardNameRow) dom.boardNameRow.hidden = true;
   }
 
+  if (dom.boardRecord) dom.boardRecord.addEventListener('click', () => {
+    if (!G.boardOffer) return;
+    if (dom.boardEntry) dom.boardEntry.hidden = true;
+    if (dom.boardNameRow) dom.boardNameRow.hidden = false;
+    if (dom.boardName) { dom.boardName.focus(); dom.boardName.select(); }
+  });
+  if (dom.boardSkip) dom.boardSkip.addEventListener('click', () => {
+    G.boardOffer = null;
+    closeBoard();
+  });
   if (dom.boardSave) dom.boardSave.addEventListener('click', commitBoardEntry);
   if (dom.boardName) dom.boardName.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); commitBoardEntry(); }
@@ -3786,11 +3803,29 @@
   // H / Esc 切换"隐藏全部 UI"。
   // .spectate-hint 故意不在隐藏名单里（见 CSS），否则按完 H 就没人知道怎么操作了。
   let uiAnimTimer = null;
-  function toggleUiHidden() {
+  function setUiHidden(hidden, fromFullscreen) {
     const body = document.body;
     clearTimeout(uiAnimTimer);
-    if (body.classList.contains('ui-hidden')) {
+    if (hidden) {
+      // 隐藏：台面立即铺满，HUD/控制条用带过冲的曲线弹出去
+      body.classList.remove('ui-showing');
+      body.classList.add('ui-anim', 'ui-hiding');
+      scheduleFit();
+      // H 同时进入网页全屏；必须由用户手势触发，所以放在这里。
+      if (!fromFullscreen && !document.fullscreenElement &&
+          document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(function () {});
+      }
+      uiAnimTimer = setTimeout(() => {
+        body.classList.remove('ui-anim', 'ui-hiding');
+        body.classList.add('ui-hidden');
+        scheduleFit();
+      }, 650);
+    } else {
       // 恢复：先撤掉 display:none，固定布局播放入场回弹，再回到网格
+      if (!fromFullscreen && document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(function () {});
+      }
       body.classList.remove('ui-hidden');
       body.classList.remove('ui-hiding');
       body.classList.add('ui-anim', 'ui-showing');
@@ -3800,18 +3835,22 @@
         scheduleFit();
         showSpectateHint();
       }, 650);
-    } else {
-      // 隐藏：台面立即铺满，HUD/控制条用带过冲的曲线弹出去
-      body.classList.remove('ui-showing');
-      body.classList.add('ui-anim', 'ui-hiding');
-      scheduleFit();
-      uiAnimTimer = setTimeout(() => {
-        body.classList.remove('ui-anim', 'ui-hiding');
-        body.classList.add('ui-hidden');
-        scheduleFit();
-      }, 650);
     }
   }
+
+  function toggleUiHidden() {
+    const hidden = document.body.classList.contains('ui-hidden') ||
+      document.body.classList.contains('ui-hiding');
+    setUiHidden(!hidden, false);
+  }
+
+  // 浏览器自带 Esc 退出全屏时，UI 也要跟着恢复，不能留一个没有任何控件的页面。
+  document.addEventListener('fullscreenchange', function () {
+    scheduleFit();
+    if (!document.fullscreenElement && document.body.classList.contains('ui-hidden')) {
+      setUiHidden(false, true);
+    }
+  });
 
   if ($('uiHandleTop')) $('uiHandleTop').addEventListener('click', toggleUiHidden);
   if ($('uiHandleBottom')) $('uiHandleBottom').addEventListener('click', toggleUiHidden);
@@ -4010,6 +4049,11 @@
       ? (audible ? t('ui.soundOn') : t('ui.soundClick'))
       : t('ui.soundOff');
     dom.soundBtn.classList.toggle('on', on);
+    if (dom.bgmBtn) {
+      const music = SNK.bgm.musicEnabled ? SNK.bgm.musicEnabled() : true;
+      dom.bgmBtn.textContent = music ? t('ui.bgmOn') : t('ui.bgmOff');
+      dom.bgmBtn.classList.toggle('on', music && on);
+    }
     if (dom.volRange) dom.volRange.value = String(SNK.bgm.volume());
   }
 
@@ -4025,6 +4069,13 @@
       }
       refreshSoundUI();
     });
+    if (dom.bgmBtn) {
+      dom.bgmBtn.addEventListener('click', () => {
+        SNK.bgm.setMusicEnabled(!SNK.bgm.musicEnabled());
+        SNK.bgm.resume();
+        refreshSoundUI();
+      });
+    }
     if (dom.volRange) {
       dom.volRange.addEventListener('input', () => {
         SNK.bgm.setVolume(Number(dom.volRange.value));

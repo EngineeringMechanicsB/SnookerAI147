@@ -27,7 +27,7 @@
   // ----------------------------------------------------------------
   //  状态与持久化
   // ----------------------------------------------------------------
-  const S = { on: false, vol: 0.7 };
+  const S = { on: false, music: true, vol: 0.7 };
   const listeners = [];
 
   let ctx = null;
@@ -43,12 +43,16 @@
     const o = JSON.parse(raw || old || 'null');
     if (o) {
       if (typeof o.on === 'boolean') S.on = o.on;
+      if (typeof o.music === 'boolean') S.music = o.music;
       if (typeof o.vol === 'number') S.vol = Math.min(1, Math.max(0, o.vol));
     }
   } catch (e) { /* 读不到就用默认值 */ }
 
   function save() {
-    try { window.localStorage.setItem('snk.audio.v2', JSON.stringify({ on: S.on, vol: S.vol })); }
+    try {
+      window.localStorage.setItem('snk.audio.v2',
+        JSON.stringify({ on: S.on, music: S.music, vol: S.vol }));
+    }
     catch (e) { /* 存不了不影响本局 */ }
   }
 
@@ -138,7 +142,7 @@
   function refreshBusLevels() {
     if (!ctx) return;
     const duck = ducked ? 0.25 : 1;
-    rampTo(musicBus, S.on ? MUSIC_LEVEL * duck : 0, 0.35);
+    rampTo(musicBus, (S.on && S.music) ? MUSIC_LEVEL * duck : 0, 0.35);
     rampTo(ambBus, S.on ? AMB_LEVEL * duck : 0, 0.6);
     master.gain.setTargetAtTime(clamp01(S.vol), ctx.currentTime, 0.05);
   }
@@ -498,7 +502,7 @@
   }
 
   function musicTick() {
-    if (!ctx || !S.on || ducked || ctx.state === 'suspended') return;
+    if (!ctx || !S.on || !S.music || ducked || ctx.state === 'suspended') return;
     const ahead = ctx.currentTime + 0.28;
     if (!nextStepTime || nextStepTime < ctx.currentTime - 0.4) {
       nextStepTime = ctx.currentTime + 0.08;
@@ -516,14 +520,14 @@
   }
 
   function startMusic() {
-    if (!ctx || !S.on || ducked) return;
+    if (!ctx || !S.on || !S.music || ducked) return;
     if (musicTimer) return;
     nextStepTime = ctx.currentTime + 0.10;
     musicTicker();
   }
 
   function musicTicker() {
-    if (!S.on || ducked) { musicTimer = null; return; }
+    if (!S.on || !S.music || ducked) { musicTimer = null; return; }
     musicTick();
     musicTimer = setTimeout(musicTicker, 55);
   }
@@ -991,6 +995,19 @@
     init: init,
     resume: resume,
     enabled: function () { return S.on; },
+    musicEnabled: function () { return S.music; },
+    setMusicEnabled: function (on) {
+      S.music = !!on;
+      save();
+      if (S.music) {
+        ensureCtx();
+        if (unlocked && S.on && !ducked) startMusic();
+      } else {
+        stopMusic();
+      }
+      refreshBusLevels();
+      notify();
+    },
     unlocked: function () { return unlocked; },
     audible: function () {
       if (!ready || !S.on || ducked || !unlocked || !ctx) return false;
